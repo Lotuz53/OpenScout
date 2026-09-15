@@ -283,7 +283,7 @@ git commit -m "feat(openscout): define stage A intelligence contracts"
 - 输入：任务 1 的 `IntelligenceRecord` 和 SQLAlchemy `Connection`。
 - 输出：`IntelligenceRepository.create_project(user_id: str, repository: str, window_start: date, window_end: date) -> dict`、`upsert_record(project_id: str, record: IntelligenceRecord) -> UpsertOutcome`、`start_sync_run(project_id: str) -> dict`、`finish_sync_run(run_id: str, summary: SyncSummary) -> dict` 和 `save_report(user_id: str, report_data: dict[str, Any]) -> dict`。
 
-- [ ] **步骤 1：编写所有权和哈希幂等仓储测试**
+- [x] **步骤 1：编写所有权和哈希幂等仓储测试**
 
 ```python
 def test_upsert_record_skips_unchanged_content(pg_conn, intelligence_record) -> None:
@@ -303,13 +303,13 @@ def test_project_lookup_is_owner_scoped(pg_conn) -> None:
     assert IntelligenceRepository(pg_conn).get_project(str(row["id"]), "other") is None
 ```
 
-- [ ] **步骤 2：运行仓储测试并确认缺少数据表或类**
+- [x] **步骤 2：运行仓储测试并确认缺少数据表或类**
 
 运行：`python -m pytest tests/storage/db/repositories/test_intelligence.py -q`
 
 预期：FAIL，因为 `IntelligenceRepository` 和相关数据表尚不存在。
 
-- [ ] **步骤 3：增加数据库迁移和匹配的 SQLAlchemy Core 表定义**
+- [x] **步骤 3：增加数据库迁移和匹配的 SQLAlchemy Core 表定义**
 
 创建 `intelligence_projects`、`intelligence_records`、`intelligence_sync_runs`、`intelligence_reports` 和 `intelligence_topic_runs`。主题表保存 `project_id`、`snapshot_id`、`algorithm_version`、`clusters` JSONB 和 `created_at`，确保趋势结果可复现。强制执行：
 
@@ -323,7 +323,7 @@ CREATE INDEX intelligence_records_labels_gin_idx ON intelligence_records USING g
 
 `intelligence_reports` 直接拥有自身 JSON 和渲染文件路径；不得复用 `artifacts`，因为 `artifacts_parent_present_check` 强制要求会话或工作流父对象。
 
-- [ ] **步骤 4：使用单个按所有者隔离的类实现仓储**
+- [x] **步骤 4：使用单个按所有者隔离的类实现仓储**
 
 ```python
 @dataclass(frozen=True)
@@ -369,7 +369,7 @@ class IntelligenceRepository:
 
 所有值都使用绑定参数，并通过 `row_to_dict` 返回字典；只有统计排序和维度名允许使用白名单。
 
-- [ ] **步骤 5：执行迁移、降级、重新迁移、测试并提交**
+- [x] **步骤 5：执行迁移、降级、重新迁移、测试并提交**
 
 运行：`python -m alembic -c docsgpt/alembic.ini upgrade head`
 

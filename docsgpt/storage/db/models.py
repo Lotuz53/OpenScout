@@ -21,6 +21,7 @@ from sqlalchemy import (
     CHAR,
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -1078,4 +1079,167 @@ device_auto_approve_patterns_table = Table(
     Column("pattern", Text, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     UniqueConstraint("device_id", "user_id", "pattern", name="device_auto_approve_uidx"),
+)
+
+
+# --- OpenScout intelligence -------------------------------------------------
+
+intelligence_projects_table = Table(
+    "intelligence_projects",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("repository", Text, nullable=False),
+    Column("window_start", Date, nullable=False),
+    Column("window_end", Date, nullable=False),
+    Column("status", Text, nullable=False, server_default="draft"),
+    Column("last_synced_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(
+        ["user_id"],
+        ["users.user_id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="IMMEDIATE",
+    ),
+    CheckConstraint(
+        "status IN ('draft', 'syncing', 'ready', 'partial', 'failed')",
+        name="intelligence_projects_status_check",
+    ),
+)
+
+Index("intelligence_projects_user_idx", intelligence_projects_table.c.user_id)
+
+intelligence_records_table = Table(
+    "intelligence_records",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "project_id",
+        UUID(as_uuid=True),
+        ForeignKey("intelligence_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("repository", Text, nullable=False),
+    Column("source_type", Text, nullable=False),
+    Column("external_id", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("body", Text, nullable=False),
+    Column("source_url", Text, nullable=False),
+    Column("state", Text),
+    Column("labels", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("comments_count", Integer, nullable=False, server_default="0"),
+    Column("reactions_count", Integer, nullable=False, server_default="0"),
+    Column("version", Text),
+    Column("created_at", DateTime(timezone=True)),
+    Column("updated_at", DateTime(timezone=True)),
+    Column("published_at", DateTime(timezone=True)),
+    Column("retrieved_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("content_hash", Text, nullable=False),
+    Column("metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    UniqueConstraint(
+        "project_id",
+        "source_type",
+        "external_id",
+        name="intelligence_records_project_source_external_uidx",
+    ),
+    CheckConstraint(
+        "source_type IN ('documentation', 'issue', 'issue_comment', 'release')",
+        name="intelligence_records_source_type_check",
+    ),
+)
+
+Index(
+    "intelligence_records_project_type_idx",
+    intelligence_records_table.c.project_id,
+    intelligence_records_table.c.source_type,
+)
+Index(
+    "intelligence_records_created_idx",
+    intelligence_records_table.c.project_id,
+    intelligence_records_table.c.created_at,
+)
+Index(
+    "intelligence_records_labels_gin_idx",
+    intelligence_records_table.c.labels,
+    postgresql_using="gin",
+)
+
+intelligence_sync_runs_table = Table(
+    "intelligence_sync_runs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "project_id",
+        UUID(as_uuid=True),
+        ForeignKey("intelligence_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("status", Text, nullable=False, server_default="queued"),
+    Column("counts", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    Column("failures", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    Column("coverage", JSONB),
+    Column("started_at", DateTime(timezone=True)),
+    Column("finished_at", DateTime(timezone=True)),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    CheckConstraint(
+        "status IN ('queued', 'running', 'complete', 'partial', 'failed')",
+        name="intelligence_sync_runs_status_check",
+    ),
+)
+
+Index(
+    "intelligence_sync_runs_project_created_idx",
+    intelligence_sync_runs_table.c.project_id,
+    intelligence_sync_runs_table.c.created_at,
+)
+
+intelligence_reports_table = Table(
+    "intelligence_reports",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column("user_id", Text, nullable=False),
+    Column("report_data", JSONB, nullable=False),
+    Column("markdown_path", Text),
+    Column("pdf_path", Text),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    ForeignKeyConstraint(
+        ["user_id"],
+        ["users.user_id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="IMMEDIATE",
+    ),
+)
+
+Index("intelligence_reports_user_idx", intelligence_reports_table.c.user_id)
+
+intelligence_topic_runs_table = Table(
+    "intelligence_topic_runs",
+    metadata,
+    Column("id", UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()),
+    Column(
+        "project_id",
+        UUID(as_uuid=True),
+        ForeignKey("intelligence_projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("snapshot_id", Text, nullable=False),
+    Column("algorithm_version", Text, nullable=False),
+    Column("clusters", JSONB, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    UniqueConstraint(
+        "project_id",
+        "snapshot_id",
+        "algorithm_version",
+        name="intelligence_topic_runs_snapshot_uidx",
+    ),
+)
+
+Index(
+    "intelligence_topic_runs_project_created_idx",
+    intelligence_topic_runs_table.c.project_id,
+    intelligence_topic_runs_table.c.created_at,
 )
