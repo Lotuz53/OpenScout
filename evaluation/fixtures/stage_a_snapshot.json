@@ -1,0 +1,14 @@
+{
+  "snapshot_id": "stage-a-2026-09-14",
+  "window": {
+    "from": "2025-09-14",
+    "to": "2026-09-14"
+  },
+  "repositories": [
+    "langgenius/dify",
+    "infiniflow/ragflow",
+    "labring/FastGPT"
+  ],
+  "issue_limit_per_repository": 1000,
+  "comment_limit_per_issue": 20
+}

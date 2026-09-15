@@ -57,7 +57,7 @@
 - 输入：Pydantic 2 和 ISO-8601 UTC 时间。
 - 输出：`SourceType`、`QueryIntent`、`RetrievalStrategy`、`ClaimKind`、`Confidence`、`IntelligenceProject`、`IntelligenceRecord`、`QueryFilters`、`QueryRequest`、`Evidence`、`Claim`、`Coverage`、`SyncSummary`、`RetrievalTrace` 和 `QueryResult`。
 
-- [ ] **步骤 1：编写数据模型契约测试**
+- [x] **步骤 1：编写数据模型契约测试**
 
 ```python
 from datetime import datetime, timezone
@@ -82,13 +82,13 @@ def test_evidence_serializes_utc_timestamp() -> None:
     assert evidence.model_dump(mode="json")["occurred_at"] == "2026-01-01T00:00:00Z"
 ```
 
-- [ ] **步骤 2：运行契约测试并确认导入失败**
+- [x] **步骤 2：运行契约测试并确认导入失败**
 
 运行：`python -m pytest tests/intelligence/test_schemas.py -q`
 
 预期：FAIL，并出现 `ModuleNotFoundError: No module named 'docsgpt.intelligence'`。
 
-- [ ] **步骤 3：实现共享枚举和数据模型**
+- [x] **步骤 3：实现共享枚举和数据模型**
 
 ```python
 class SourceType(StrEnum):
@@ -246,7 +246,7 @@ class QueryResult(BaseModel):
 
 后续 API 和界面类型必须严格复用这些序列化字段名。
 
-- [ ] **步骤 4：增加脱敏的数据快照清单和第一条决策记录**
+- [x] **步骤 4：增加脱敏的数据快照清单和第一条决策记录**
 
 ```json
 {
@@ -260,7 +260,7 @@ class QueryResult(BaseModel):
 
 在 `decision-log.md` 中记录：公开 GitHub 社区活动属于产品信号，不等同于商业需求。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_schemas.py -q`
 
