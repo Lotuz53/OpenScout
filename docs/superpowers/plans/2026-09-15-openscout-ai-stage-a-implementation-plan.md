@@ -397,7 +397,7 @@ git commit -m "feat(openscout): persist intelligence records and runs"
 - 输入：`GitHubLoader.normalize_repo(repo_url: str) -> str` 和 `settings.GITHUB_ACCESS_TOKEN`。
 - 输出：`GitHubClient.iter_issues(repo, since, until, limit=1000)`、`iter_comments(repo, issue_number, limit=20)`、`iter_releases(repo, since, until)` 和强类型 `GitHubRateLimitError(reset_at)`。
 
-- [ ] **步骤 1：编写固定响应测试**
+- [x] **步骤 1：编写固定响应测试**
 
 ```python
 def test_iter_issues_filters_pull_requests_and_stops_at_limit(responses) -> None:
@@ -417,17 +417,17 @@ def test_rate_limit_is_recoverable(responses) -> None:
     assert exc.value.reset_at.timestamp() == 1800000000
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_github_client.py -q`
 
 预期：FAIL，提示缺少 `docsgpt.intelligence.github_client`。
 
-- [ ] **步骤 3：提取现有鉴权请求接口**
+- [x] **步骤 3：提取现有鉴权请求接口**
 
 仅在必要时修改 `GitHubLoader._make_request()`，让两个调用方共享请求头、状态分类和超时设置；保持现有加载器行为和测试不变。
 
-- [ ] **步骤 4：实现不阻塞等待的有界分页**
+- [x] **步骤 4：实现不阻塞等待的有界分页**
 
 ```python
 def _iter_pages(self, url: str, params: dict[str, object]) -> Iterator[dict[str, Any]]:
@@ -445,7 +445,7 @@ def _iter_pages(self, url: str, params: dict[str, object]) -> Iterator[dict[str,
 
 在代码中按请求窗口过滤，按 `created_at` 排序评论并截取前 20 条。遇到限流时抛出异常，由 Celery 决定重试时间。
 
-- [ ] **步骤 5：运行局部测试和现有加载器测试，然后提交**
+- [x] **步骤 5：运行局部测试和现有加载器测试，然后提交**
 
 运行：`python -m pytest tests/intelligence/test_github_client.py tests/parser -q`
 

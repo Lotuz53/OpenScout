@@ -3,6 +3,7 @@ import logging
 import mimetypes
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import requests
@@ -12,6 +13,17 @@ from docsgpt.parser.remote.base import BaseRemote
 from docsgpt.parser.schema.base import Document
 
 logger = logging.getLogger(__name__)
+
+
+class GitHubRateLimitError(Exception):
+    """Raised when GitHub reports that the API rate limit is exhausted."""
+
+    def __init__(self, reset_at: datetime) -> None:
+        self.reset_at = reset_at
+        super().__init__(
+            "GitHub API rate limit exceeded. "
+            f"Reset time: {int(reset_at.timestamp())}"
+        )
 
 # Directory names that hold vendored or generated output. Anything under one
 # of these is build product, not source: it bloats the index, costs an API
@@ -302,10 +314,31 @@ class GitHubLoader(BaseRemote):
                 return None
             return file_content
 
-    def _make_request(self, url: str, max_retries: int = 3) -> requests.Response:
-        """Make a request with retry logic for rate limiting"""
+    def _make_request(
+        self,
+        url: str,
+        max_retries: int = 3,
+        params: Optional[Dict[str, object]] = None,
+    ) -> requests.Response:
+        """Make an authenticated request with bounded rate-limit retries.
+
+        Args:
+            url: GitHub API URL.
+            max_retries: Maximum number of attempts for a rate-limited response.
+            params: Optional query parameters forwarded to ``requests``.
+
+        Returns:
+            A successful GitHub response.
+
+        Raises:
+            GitHubRateLimitError: If the rate limit remains exhausted after retries.
+            requests.HTTPError: If GitHub returns another unsuccessful status.
+        """
         for attempt in range(max_retries):
-            response = requests.get(url, headers=self.headers, timeout=100)
+            request_kwargs = {"headers": self.headers, "timeout": 100}
+            if params is not None:
+                request_kwargs["params"] = params
+            response = requests.get(url, **request_kwargs)
 
             if response.status_code == 200:
                 return response
@@ -336,10 +369,16 @@ class GitHubLoader(BaseRemote):
 
                     # Provide helpful error message
                     if remaining == "0":
-                        raise Exception(f"GitHub API rate limit exceeded. Please set GITHUB_ACCESS_TOKEN environment variable. Reset time: {reset_time}")
+                        try:
+                            reset_at = datetime.fromtimestamp(int(reset_time), tz=timezone.utc)
+                        except (TypeError, ValueError, OverflowError):
+                            reset_at = datetime.now(timezone.utc)
+                        raise GitHubRateLimitError(reset_at)
                     else:
                         raise Exception(f"GitHub API error: {error_msg}. This may require authentication - set GITHUB_ACCESS_TOKEN environment variable.")
                 except Exception as e:
+                    if isinstance(e, GitHubRateLimitError):
+                        raise
                     if isinstance(e, Exception) and "GitHub API" in str(e):
                         raise
                     # If we can't parse the response, raise the original error
@@ -353,7 +392,10 @@ class GitHubLoader(BaseRemote):
                     "retrying %s unauthenticated", url,
                 )
                 anon = {"Accept": "application/vnd.github.v3+json"}
-                anon_response = requests.get(url, headers=anon, timeout=100)
+                anon_kwargs = {"headers": anon, "timeout": 100}
+                if params is not None:
+                    anon_kwargs["params"] = params
+                anon_response = requests.get(url, **anon_kwargs)
                 if anon_response.status_code == 200:
                     return anon_response
                 anon_response.raise_for_status()
