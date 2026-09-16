@@ -66,4 +66,4 @@
 - [x] Confirm only the pre-existing `AGENTS.md` modification remains uncommitted.
 - [x] Record the remote branch/tag hashes and any non-blocking GitHub warnings.
 
-**Final verification:** `main` and `feature/openscout-design` both point to `bc4530e3554712d54d08ecd24842a6398ff25773`; `openscout-stage-a` remains at `acb8b3d5b618a8bcc2b7f30fb11f5ed33682025d`. GitHub reports `default_branch=main`, `fork=false`, and no parent repository. GitHub warned that the pre-existing `tests/e2e/fixtures/docs/oversize.pdf` is 55 MB, but accepted the push.
+**Final verification:** At the latest verification, `main` and `feature/openscout-design` pointed to the same current OpenScout commit; `openscout-stage-a` remains at `acb8b3d5b618a8bcc2b7f30fb11f5ed33682025d`. The exact synchronized commit is verified from the remote refs rather than hard-coded here so later OpenScout fixes do not make this record stale. GitHub reports `default_branch=main`, `fork=false`, and no parent repository. GitHub warned that the pre-existing `tests/e2e/fixtures/docs/oversize.pdf` is 55 MB, but accepted the push.
