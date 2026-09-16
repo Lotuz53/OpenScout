@@ -1085,6 +1085,8 @@ git add docsgpt/intelligence/claims.py docsgpt/intelligence/confidence.py docsgp
 git commit -m "feat(openscout): enforce evidence and claim confidence"
 ```
 
+> 后续缺陷修复（2026-09-17）：聚合查询的 SQL 行现在会生成带代表性证据引用的 `statistic` claim，并替换模型生成的重复统计；因此统一 `QueryResult.claims` 与工作台“确定性统计”区域保持一致。聚合、查询服务和既有可信度回归测试通过，隔离实测工作台显示 3 条高可信度统计。
+
 ### 任务 14：生成统一报告模型并导出 Markdown/PDF
 
 **文件：**

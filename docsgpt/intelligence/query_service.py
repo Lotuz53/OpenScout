@@ -213,6 +213,33 @@ def _format_aggregate_value(value: int | float) -> str:
     return str(value)
 
 
+def _aggregate_claims(
+    result: AggregateResult,
+    evidence: Sequence[Evidence],
+) -> list[Claim]:
+    """Expose each SQL row as a cited statistic claim for result consumers.
+
+    The aggregate value is computed by SQL; representative evidence ids keep
+    the statistic traceable in the shared result contract without asking the
+    language model to reproduce or validate the number.
+    """
+    evidence_ids = [item.id for item in evidence]
+    if not evidence_ids:
+        return []
+    return [
+        Claim(
+            id=f"aggregate:{result.metric}:{result.dimension}:{index}",
+            text=(
+                f"{result.metric}（按{result.dimension}）："
+                f"{row.dimension}={_format_aggregate_value(row.value)}"
+            ),
+            kind=ClaimKind.STATISTIC,
+            evidence_ids=evidence_ids,
+        )
+        for index, row in enumerate(result.rows)
+    ]
+
+
 def enforce_citations(
     *,
     claims: Sequence[Claim],
@@ -574,6 +601,17 @@ class QueryService:
             coverage,
         )
         if aggregate_result is not None:
+            claims = [
+                claim for claim in claims if claim.kind != ClaimKind.STATISTIC
+            ]
+            claims.extend(
+                _score_claims(
+                    _aggregate_claims(aggregate_result, evidence),
+                    evidence,
+                    coverage,
+                    False,
+                )
+            )
             answer = f"{_format_aggregate_result(aggregate_result)}\n{answer}"
         return QueryResult(
             answer=answer,

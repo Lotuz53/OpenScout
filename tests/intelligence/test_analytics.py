@@ -248,5 +248,8 @@ def test_query_service_keeps_sql_value_and_representative_evidence() -> None:
 
     assert "3" in result.answer
     assert result.evidence == [evidence]
+    assert len(result.claims) == 1
+    assert result.claims[0].kind == "statistic"
+    assert result.claims[0].evidence_ids == [evidence.id]
     analytics.run.assert_called_once()
     retriever.retrieve.assert_not_called()
