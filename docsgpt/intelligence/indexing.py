@@ -124,6 +124,27 @@ class IntelligenceIndexer:
             chunk_ids=chunk_ids,
         )
 
+    def delete_records(
+        self,
+        project_id: str,
+        record_ids: Sequence[str],
+    ) -> IndexSummary:
+        """Delete vector chunks for records confirmed inactive.
+
+        Args:
+            project_id: Intelligence project owning the records.
+            record_ids: Persisted record ids whose active state changed.
+
+        Returns:
+            The number of removed chunks. No embeddings are generated.
+        """
+        deleted_chunks = 0
+        for record_id in record_ids:
+            source = _stable_source(project_id, str(record_id))
+            deleted_chunks += self._delete_existing(source)
+            self._chunk_ids_by_source.pop(source, None)
+        return IndexSummary(deleted_chunks=deleted_chunks)
+
     def _project_chunks(
         self,
         record: IntelligenceRecord,

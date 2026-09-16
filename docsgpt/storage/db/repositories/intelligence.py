@@ -16,7 +16,7 @@ from docsgpt.intelligence.analytics import (
     ALLOWED_METRICS,
     ALLOWED_ORDERS,
 )
-from docsgpt.intelligence.schemas import IntelligenceRecord, QueryFilters, SyncSummary
+from docsgpt.intelligence.schemas import IntelligenceRecord, QueryFilters, SourceType, SyncSummary
 from docsgpt.storage.db.base_repository import row_to_dict
 
 
@@ -191,7 +191,9 @@ class IntelligenceRepository:
                        MAX(p.window_end) AS date_to,
                        MAX(p.last_synced_at) AS last_synced_at
                 FROM intelligence_projects AS p
-                LEFT JOIN intelligence_records AS r ON r.project_id = p.id
+                LEFT JOIN intelligence_records AS r
+                    ON r.project_id = p.id
+                   AND r.active IS TRUE
                 WHERE p.user_id = :user_id
                 """
             ),
@@ -204,6 +206,7 @@ class IntelligenceRepository:
                 FROM intelligence_records AS r
                 JOIN intelligence_projects AS p ON p.id = r.project_id
                 WHERE p.user_id = :user_id
+                  AND r.active IS TRUE
                 GROUP BY r.source_type
                 """
             ),
@@ -608,12 +611,42 @@ class IntelligenceRepository:
             },
         }
 
-    def upsert_record(self, project_id: str, record: IntelligenceRecord) -> UpsertOutcome:
+    def get_record(self, record_id: str) -> dict[str, Any] | None:
+        """Return a normalized record, including inactive audit state.
+
+        Args:
+            record_id: UUID of the intelligence record.
+
+        Returns:
+            The record row or ``None`` when it does not exist.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                SELECT *
+                FROM intelligence_records
+                WHERE id = CAST(:record_id AS uuid)
+                """
+            ),
+            {"record_id": record_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def upsert_record(
+        self,
+        project_id: str,
+        record: IntelligenceRecord,
+        *,
+        sync_id: str | None = None,
+    ) -> UpsertOutcome:
         """Insert or update a normalized record using its stable content hash.
 
         Args:
             project_id: UUID of the owning intelligence project.
             record: Normalized GitHub evidence record.
+            sync_id: Optional synchronization run identifier that observed the
+                record.
 
         Returns:
             The database record id and whether its stored content changed.
@@ -621,6 +654,7 @@ class IntelligenceRepository:
         params = record.to_repository_params(project_id)
         params["source_type"] = record.source_type.value
         params["labels"] = json.dumps(record.labels, ensure_ascii=False)
+        params["last_seen_sync_id"] = sync_id
         result = self._conn.execute(
             text(
                 """
@@ -628,12 +662,14 @@ class IntelligenceRepository:
                     INSERT INTO intelligence_records
                         (project_id, repository, source_type, external_id, title, body,
                          source_url, state, labels, comments_count, reactions_count, version,
-                         created_at, updated_at, published_at, retrieved_at, content_hash, metadata)
+                         created_at, updated_at, published_at, retrieved_at, content_hash,
+                         last_seen_sync_id, metadata)
                     VALUES
                         (CAST(:project_id AS uuid), :repository, :source_type, :external_id,
                          :title, :body, :source_url, :state, CAST(:labels AS jsonb),
                          :comments_count, :reactions_count, :version, :created_at, :updated_at,
-                         :published_at, :retrieved_at, :content_hash, CAST(:metadata AS jsonb))
+                         :published_at, :retrieved_at, :content_hash, :last_seen_sync_id,
+                         CAST(:metadata AS jsonb))
                     ON CONFLICT (project_id, source_type, external_id) DO UPDATE SET
                         repository = EXCLUDED.repository,
                         title = EXCLUDED.title,
@@ -649,8 +685,16 @@ class IntelligenceRepository:
                         published_at = EXCLUDED.published_at,
                         retrieved_at = EXCLUDED.retrieved_at,
                         content_hash = EXCLUDED.content_hash,
+                        last_seen_sync_id = COALESCE(
+                            EXCLUDED.last_seen_sync_id,
+                            intelligence_records.last_seen_sync_id
+                        ),
+                        missing_confirmations = 0,
+                        active = true,
+                        deactivated_at = NULL,
                         metadata = EXCLUDED.metadata
                     WHERE intelligence_records.content_hash <> EXCLUDED.content_hash
+                       OR intelligence_records.active IS NOT TRUE
                     RETURNING id
                 )
                 SELECT id, true AS changed FROM changed
@@ -668,6 +712,98 @@ class IntelligenceRepository:
         )
         row = result.mappings().one()
         return UpsertOutcome(record_id=str(row["id"]), changed=bool(row["changed"]))
+
+    def mark_seen(self, record_id: str, sync_id: str) -> None:
+        """Reset missing evidence state after a sync observes a record.
+
+        Args:
+            record_id: UUID of the observed record.
+            sync_id: Identifier of the synchronization run.
+        """
+        self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_records
+                SET last_seen_sync_id = :sync_id,
+                    missing_confirmations = 0,
+                    active = true,
+                    deactivated_at = NULL
+                WHERE id = CAST(:record_id AS uuid)
+                """
+            ),
+            {"record_id": record_id, "sync_id": sync_id},
+        )
+
+    def record_missing(
+        self,
+        project_id: str,
+        source_type: SourceType,
+        seen_ids: set[str],
+    ) -> int:
+        """Record one complete-source observation that active records are missing.
+
+        Args:
+            project_id: UUID of the owning intelligence project.
+            source_type: Source type whose complete result was collected.
+            seen_ids: External ids returned by that source collection.
+
+        Returns:
+            Number of active records whose confirmation count increased.
+        """
+        source_value = getattr(source_type, "value", str(source_type))
+        params: dict[str, Any] = {
+            "project_id": project_id,
+            "source_type": source_value,
+        }
+        missing_filter = ""
+        if seen_ids:
+            placeholders = []
+            for index, external_id in enumerate(sorted(seen_ids)):
+                parameter = f"seen_id_{index}"
+                params[parameter] = external_id
+                placeholders.append(f":{parameter}")
+            missing_filter = f"AND external_id NOT IN ({', '.join(placeholders)})"
+
+        result = self._conn.execute(
+            text(
+                f"""
+                UPDATE intelligence_records
+                SET missing_confirmations = missing_confirmations + 1
+                WHERE project_id = CAST(:project_id AS uuid)
+                  AND source_type = :source_type
+                  AND active IS TRUE
+                  {missing_filter}
+                RETURNING id
+                """
+            ),
+            params,
+        )
+        return len(result.fetchall())
+
+    def deactivate_confirmed_missing(self, project_id: str) -> list[str]:
+        """Deactivate records missing from two complete source observations.
+
+        Args:
+            project_id: UUID of the owning intelligence project.
+
+        Returns:
+            Persisted ids that transitioned from active to inactive.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_records
+                SET active = false,
+                    deactivated_at = now()
+                WHERE project_id = CAST(:project_id AS uuid)
+                  AND active IS TRUE
+                  AND missing_confirmations >= 2
+                RETURNING id::text
+                """
+            ),
+            {"project_id": project_id},
+        )
+        return [str(row[0]) for row in result.fetchall()]
 
     def start_sync_run(self, project_id: str) -> dict[str, Any]:
         """Create a running synchronization record for a project.
@@ -781,6 +917,7 @@ def _analytics_scope(
 ) -> tuple[list[str], dict[str, Any]]:
     """Build a parameterized owner and metadata scope for analytics SQL."""
     where, params = _project_scope(user_id, project_ids)
+    where.append("r.active IS TRUE")
     _append_record_filters(where, params, filters)
     return where, params
 

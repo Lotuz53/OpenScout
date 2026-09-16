@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from typing import Any
+from uuid import uuid4
 
+from pydantic import BaseModel, ConfigDict, Field
 from requests import RequestException
 from sqlalchemy import text
 
@@ -39,6 +42,35 @@ RecoverableGitHubError = (GitHubRateLimitError, RequestException)
 SessionFactory = Callable[[], AbstractContextManager[Any]]
 GRAPH_ISSUE_LIMIT = 300
 logger = logging.getLogger(__name__)
+
+
+class SyncCursor(BaseModel):
+    """High-water marks returned by a successful incremental sync."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    last_success_at: datetime
+    external_updated_at: datetime | None = None
+
+
+class IncrementalSyncSummary(SyncSummary):
+    """Synchronization summary with incremental and deletion audit counts."""
+
+    cursor: SyncCursor | None = None
+    changed_records: int = 0
+    unchanged_records: int = 0
+    embedded_chunks: int = 0
+    deactivated_record_ids: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class PersistBatchSummary:
+    """Describe persistence and indexing outcomes for one source batch."""
+
+    changed_records: int = 0
+    unchanged_records: int = 0
+    embedded_chunks: int = 0
+    seen_record_ids: tuple[str, ...] = ()
 
 
 class SyncService:
@@ -91,8 +123,16 @@ class SyncService:
         self.graph_extractor = graph_extractor
         self.graph_enabled = graph_enabled
 
-    def run(self, project_id: str, user_id: str) -> SyncSummary:
-        """Synchronize one owner-scoped project and return its summary.
+    def run(self, project_id: str, user_id: str) -> IncrementalSyncSummary:
+        """Run the current incremental synchronization implementation.
+
+        ``run`` remains the task-facing entry point while the explicit method
+        makes the incremental behavior directly testable.
+        """
+        return self.run_incremental(project_id, user_id)
+
+    def run_incremental(self, project_id: str, user_id: str) -> IncrementalSyncSummary:
+        """Synchronize one owner-scoped project from its last successful cursor.
 
         Args:
             project_id: UUID of the intelligence project.
@@ -116,20 +156,30 @@ class SyncService:
             raise ValueError("Intelligence project window_start must not exceed window_end")
 
         retrieved_at = _as_utc_datetime(self.now_factory())
-        since = datetime.combine(window_start, time.min, tzinfo=UTC)
+        previous_sync = _optional_field(project, "last_synced_at")
+        since = (
+            _as_utc_datetime(previous_sync)
+            if previous_sync is not None
+            else datetime.combine(window_start, time.min, tzinfo=UTC)
+        )
         until = datetime.combine(window_end, time.max, tzinfo=UTC)
         counts = {source_type: 0 for source_type in SourceType}
         failures: list[SyncFailure] = []
         observed_dates: list[date] = []
         successful_sources: set[SourceType] = set()
+        completed_batches: dict[SourceType, list[IntelligenceRecord]] = {}
+        changed_records = 0
+        unchanged_records = 0
+        embedded_chunks = 0
         capped = False
 
         run_id = self._start_sync_run(project_id)
+        sync_id = run_id or str(uuid4())
         self._set_project_status(project_id, user_id, "syncing")
 
         document_collector = getattr(self.github, "iter_documents", None)
         if callable(document_collector):
-            document_ok, _, document_capped = self._run_source(
+            document_ok, document_records, document_capped, document_summary = self._run_source(
                 project_id=project_id,
                 source_type=SourceType.DOCUMENTATION,
                 user_id=user_id,
@@ -147,12 +197,17 @@ class SyncService:
                 counts=counts,
                 failures=failures,
                 observed_dates=observed_dates,
+                sync_id=sync_id,
             )
             if document_ok:
                 successful_sources.add(SourceType.DOCUMENTATION)
+                completed_batches[SourceType.DOCUMENTATION] = document_records
+                changed_records += document_summary.changed_records
+                unchanged_records += document_summary.unchanged_records
+                embedded_chunks += document_summary.embedded_chunks
             capped = capped or document_capped
 
-        release_ok, _, release_capped = self._run_source(
+        release_ok, release_records, release_capped, release_summary = self._run_source(
             project_id=project_id,
             source_type=SourceType.RELEASE,
             user_id=user_id,
@@ -166,9 +221,14 @@ class SyncService:
             counts=counts,
             failures=failures,
             observed_dates=observed_dates,
+            sync_id=sync_id,
         )
         if release_ok:
             successful_sources.add(SourceType.RELEASE)
+            completed_batches[SourceType.RELEASE] = release_records
+            changed_records += release_summary.changed_records
+            unchanged_records += release_summary.unchanged_records
+            embedded_chunks += release_summary.embedded_chunks
         capped = capped or release_capped
 
         issue_raws: list[Mapping[str, Any]] | None = None
@@ -184,7 +244,7 @@ class SyncService:
                 len(issue_raws) >= ISSUE_LIMIT,
             )
 
-        issue_ok, _, issue_capped = self._run_source(
+        issue_ok, issue_records, issue_capped, issue_summary = self._run_source(
             project_id=project_id,
             source_type=SourceType.ISSUE,
             user_id=user_id,
@@ -192,13 +252,18 @@ class SyncService:
             counts=counts,
             failures=failures,
             observed_dates=observed_dates,
+            sync_id=sync_id,
         )
         if issue_ok:
             successful_sources.add(SourceType.ISSUE)
+            completed_batches[SourceType.ISSUE] = issue_records
+            changed_records += issue_summary.changed_records
+            unchanged_records += issue_summary.unchanged_records
+            embedded_chunks += issue_summary.embedded_chunks
         capped = capped or issue_capped
 
         if issue_ok and issue_raws is not None:
-            comment_ok, _, comment_capped = self._run_source(
+            comment_ok, comment_records, comment_capped, comment_summary = self._run_source(
                 project_id=project_id,
                 source_type=SourceType.ISSUE_COMMENT,
                 user_id=user_id,
@@ -210,13 +275,33 @@ class SyncService:
                 counts=counts,
                 failures=failures,
                 observed_dates=observed_dates,
+                sync_id=sync_id,
             )
             if comment_ok:
                 successful_sources.add(SourceType.ISSUE_COMMENT)
+                completed_batches[SourceType.ISSUE_COMMENT] = comment_records
+                changed_records += comment_summary.changed_records
+                unchanged_records += comment_summary.unchanged_records
+                embedded_chunks += comment_summary.embedded_chunks
             capped = capped or comment_capped
 
+        deactivated_record_ids: list[str] = []
+        if not failures and not capped:
+            deactivated_record_ids = self._reconcile_missing(
+                project_id,
+                completed_batches,
+            )
+
         status = _summary_status(successful_sources, failures)
-        last_synced_at = retrieved_at if successful_sources else None
+        last_synced_at = retrieved_at if not failures else None
+        cursor = (
+            SyncCursor(
+                last_success_at=retrieved_at,
+                external_updated_at=_latest_external_update(completed_batches.values()),
+            )
+            if not failures
+            else None
+        )
         coverage = Coverage(
             repositories=[repository_name],
             date_from=min(observed_dates) if observed_dates else window_start,
@@ -225,11 +310,16 @@ class SyncService:
             capped=capped,
             last_synced_at=last_synced_at,
         )
-        summary = SyncSummary(
+        summary = IncrementalSyncSummary(
             status=status,
             counts=counts,
             failures=failures,
             coverage=coverage,
+            cursor=cursor,
+            changed_records=changed_records,
+            unchanged_records=unchanged_records,
+            embedded_chunks=embedded_chunks,
+            deactivated_record_ids=deactivated_record_ids,
         )
 
         if run_id is not None:
@@ -252,25 +342,31 @@ class SyncService:
         counts: dict[SourceType, int],
         failures: list[SyncFailure],
         observed_dates: list[date],
-    ) -> tuple[bool, list[IntelligenceRecord], bool]:
+        sync_id: str,
+    ) -> tuple[bool, list[IntelligenceRecord], bool, PersistBatchSummary]:
         """Collect, normalize and persist one source batch."""
         try:
             records, capped = producer()
         except Exception as exc:
             failures.append(_to_sync_failure(source_type, exc))
-            return False, [], False
+            return False, [], False, PersistBatchSummary()
 
         # One call opens one transaction for the entire source batch. A
         # failure here is a local consistency failure and must not be recast as
         # a successful GitHub partial result.
-        self._persist_batch(project_id, records, user_id=user_id)
+        batch_summary = self._persist_batch(
+            project_id,
+            records,
+            user_id=user_id,
+            sync_id=sync_id,
+        )
         counts[source_type] = len(records)
         observed_dates.extend(
             record_date
             for record in records
             for record_date in _record_dates(record)
         )
-        return True, records, capped
+        return True, records, capped, batch_summary
 
     def _collect_comments(
         self,
@@ -310,22 +406,54 @@ class SyncService:
         records: Sequence[IntelligenceRecord],
         *,
         user_id: str | None = None,
-    ) -> None:
+        sync_id: str | None = None,
+    ) -> PersistBatchSummary:
         """Upsert and index a source batch inside one write transaction."""
         if not records:
-            return
+            return PersistBatchSummary()
         with self._repository_context() as repository:
             upsert_many = getattr(repository, "upsert_records", None)
             if callable(upsert_many):
-                result = upsert_many(project_id, records)
+                if sync_id is None:
+                    result = upsert_many(project_id, records)
+                else:
+                    try:
+                        result = upsert_many(project_id, records, sync_id=sync_id)
+                    except TypeError:
+                        result = upsert_many(project_id, records)
                 changed_records = _changed_records(records, result)
+                changed_count = _changed_count(records, result, changed_records)
+                unchanged_count = max(0, len(records) - changed_count)
+                seen_record_ids = _outcome_record_ids(records, result)
             else:
                 changed_records = []
+                changed_count = 0
+                unchanged_count = 0
+                seen_record_ids = []
                 for record in records:
-                    outcome = repository.upsert_record(project_id, record)
+                    try:
+                        outcome = repository.upsert_record(
+                            project_id,
+                            record,
+                            sync_id=sync_id,
+                        )
+                    except TypeError:
+                        outcome = repository.upsert_record(project_id, record)
+                    record_id = _outcome_record_id(outcome)
+                    if record_id is not None:
+                        seen_record_ids.append(record_id)
                     if _outcome_changed(outcome):
                         changed_records.append(_record_with_outcome_id(record, outcome))
+                        changed_count += 1
+                    else:
+                        unchanged_count += 1
 
+            marker = getattr(repository, "mark_seen", None)
+            if callable(marker) and sync_id is not None:
+                for record_id in seen_record_ids:
+                    marker(record_id, sync_id)
+
+            index_summary: Any | None = None
             if changed_records:
                 indexer = self._get_indexer(project_id, repository)
                 if indexer is not None:
@@ -336,6 +464,48 @@ class SyncService:
                         changed_records,
                         index_summary,
                     )
+
+            return PersistBatchSummary(
+                changed_records=changed_count,
+                unchanged_records=unchanged_count,
+                embedded_chunks=_embedded_chunk_count(index_summary),
+                seen_record_ids=tuple(seen_record_ids),
+            )
+
+    def _reconcile_missing(
+        self,
+        project_id: str,
+        completed_batches: Mapping[SourceType, Sequence[IntelligenceRecord]],
+    ) -> list[str]:
+        """Confirm complete-source omissions and remove only deactivated chunks."""
+        with self._repository_context() as repository:
+            recorder = getattr(repository, "record_missing", None)
+            deactivator = getattr(repository, "deactivate_confirmed_missing", None)
+            if not callable(recorder) or not callable(deactivator):
+                return []
+
+            for source_type, records in completed_batches.items():
+                recorder(
+                    project_id,
+                    source_type,
+                    {record.external_id for record in records},
+                )
+
+            deactivated_ids = [
+                str(record_id)
+                for record_id in (deactivator(project_id) or [])
+            ]
+            if deactivated_ids:
+                indexer = self._get_indexer(project_id, repository)
+                deleter = getattr(indexer, "delete_records", None)
+                if callable(deleter):
+                    deleter(project_id, deactivated_ids)
+                else:
+                    logger.warning(
+                        "Indexer cannot delete deactivated records for project %s",
+                        project_id,
+                    )
+            return deactivated_ids
 
     def _enqueue_graph_extraction(
         self,
@@ -482,7 +652,10 @@ class SyncService:
             starter = getattr(repository, "start_sync_run", None)
             if not callable(starter):
                 return None
-            row = starter(project_id)
+            try:
+                row = starter(project_id)
+            except TypeError:
+                row = starter()
             return _row_id(row)
 
     def _finish_sync_run(self, run_id: str, summary: SyncSummary) -> None:
@@ -568,6 +741,13 @@ def _field(value: Any, name: str) -> Any:
     if isinstance(value, Mapping):
         return value[name]
     return getattr(value, name)
+
+
+def _optional_field(value: Any, name: str) -> Any | None:
+    """Read an optional field from a mapping or an object with attributes."""
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return getattr(value, name, None)
 
 
 def _as_date(value: Any) -> date:
@@ -697,9 +877,68 @@ def _outcome_changed(outcome: Any) -> bool:
     """Interpret repository upsert outcomes conservatively."""
     if isinstance(outcome, bool):
         return outcome
+    if isinstance(outcome, Mapping):
+        return bool(outcome.get("changed", True))
     if outcome is None:
         return True
     return bool(getattr(outcome, "changed", True))
+
+
+def _outcome_record_id(outcome: Any) -> str | None:
+    """Extract a persisted record id from an upsert outcome."""
+    if isinstance(outcome, Mapping):
+        record_id = outcome.get("record_id") or outcome.get("id")
+    else:
+        record_id = getattr(outcome, "record_id", None) or getattr(outcome, "id", None)
+    return str(record_id) if record_id is not None else None
+
+
+def _outcome_record_ids(
+    records: Sequence[IntelligenceRecord],
+    outcomes: Any,
+) -> list[str]:
+    """Extract all persisted ids returned by a batch upsert."""
+    if not isinstance(outcomes, (list, tuple)):
+        return [str(record.id) for record in records if record.id]
+
+    ids: list[str] = []
+    for record, outcome in zip(records, outcomes):
+        record_id = _outcome_record_id(outcome) or (str(record.id) if record.id else None)
+        if record_id is not None:
+            ids.append(record_id)
+    return ids
+
+
+def _changed_count(
+    records: Sequence[IntelligenceRecord],
+    outcomes: Any,
+    changed_records: Sequence[IntelligenceRecord],
+) -> int:
+    """Count changed records from either a batch result or mapped records."""
+    if not isinstance(outcomes, (list, tuple)):
+        return len(changed_records)
+    if outcomes and all(isinstance(item, IntelligenceRecord) for item in outcomes):
+        return len(changed_records)
+    return sum(_outcome_changed(outcome) for outcome in outcomes[: len(records)])
+
+
+def _embedded_chunk_count(index_summary: Any | None) -> int:
+    """Read an integer embedding count without trusting test doubles."""
+    value = getattr(index_summary, "embedded_chunks", 0)
+    return int(value) if isinstance(value, int) else 0
+
+
+def _latest_external_update(
+    batches: Sequence[Sequence[IntelligenceRecord]],
+) -> datetime | None:
+    """Return the latest external update timestamp in the collected batches."""
+    timestamps = [
+        record.updated_at
+        for records in batches
+        for record in records
+        if record.updated_at is not None
+    ]
+    return max(timestamps) if timestamps else None
 
 
 def _record_with_outcome_id(
@@ -707,13 +946,10 @@ def _record_with_outcome_id(
     outcome: Any,
 ) -> IntelligenceRecord:
     """Attach the persisted id to a changed record when the repository returns it."""
-    if isinstance(outcome, Mapping):
-        record_id = outcome.get("record_id") or outcome.get("id")
-    else:
-        record_id = getattr(outcome, "record_id", None) or getattr(outcome, "id", None)
+    record_id = _outcome_record_id(outcome)
     if record_id is None:
         return record
-    return record.model_copy(update={"id": str(record_id)})
+    return record.model_copy(update={"id": record_id})
 
 
 def _changed_records(

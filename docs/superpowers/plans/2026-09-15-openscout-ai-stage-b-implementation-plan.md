@@ -95,7 +95,7 @@ git commit -m "feat(openscout): preflight public GitHub repositories"
 - 输入：最近成功同步游标、外部对象的 `updated_at`、`content_hash`，以及阶段 A 的定向切片删除能力。
 - 输出：`SyncCursor(last_success_at: datetime, external_updated_at: datetime | None)`、`mark_seen(record_id: str, sync_id: str) -> None`、`record_missing(project_id: str, source_type: SourceType, seen_ids: set[str]) -> int`、`deactivate_confirmed_missing(project_id: str) -> list[str]` 和 `IncrementalSyncSummary`。
 
-- [ ] **步骤 1：编写变化、未变化和连续两次缺失测试**
+- [x] **步骤 1：编写变化、未变化和连续两次缺失测试**
 
 ```python
 def test_unchanged_record_is_not_reindexed(service, indexer) -> None:
@@ -110,21 +110,21 @@ def test_record_deactivates_only_after_two_complete_misses(service, repo) -> Non
     assert repo.get_record(RECORD_ID)["active"] is False
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_incremental_sync.py tests/storage/db/repositories/test_intelligence.py -q`
 
 预期：FAIL，因为同步游标和删除审计字段尚不存在。
 
-- [ ] **步骤 3：增加数据库迁移和仓储状态转换**
+- [x] **步骤 3：增加数据库迁移和仓储状态转换**
 
 增加 `last_seen_sync_id`、`missing_confirmations integer NOT NULL DEFAULT 0`、`active boolean NOT NULL DEFAULT true` 和 `deactivated_at`。再次发现对象时清零缺失次数；只有某一来源类型完整同步成功后才累计缺失；部分成功或失败的批次不得确认对象缺失。
 
-- [ ] **步骤 4：实现增量采集和定向索引**
+- [x] **步骤 4：实现增量采集和定向索引**
 
 使用最近成功同步时间作为 `since`，比较哈希，只索引新增或变化记录；只有记录从活跃转为非活跃时才删除切片。停用后仍保留标准化记录和审计字段。
 
-- [ ] **步骤 5：执行迁移、验证并提交**
+- [x] **步骤 5：执行迁移、验证并提交**
 
 运行：`python -m alembic -c docsgpt/alembic.ini upgrade head`
 

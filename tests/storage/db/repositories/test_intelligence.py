@@ -48,6 +48,32 @@ def test_upsert_record_skips_unchanged_content(pg_conn, project, intelligence_re
     assert second.record_id == first.record_id
 
 
+def test_missing_record_requires_two_confirmations_and_can_reappear(
+    pg_conn,
+    project,
+    intelligence_record,
+) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    outcome = repo.upsert_record(project_id, intelligence_record)
+
+    assert repo.record_missing(project_id, SourceType.ISSUE, set()) == 1
+    assert repo.get_record(outcome.record_id)["missing_confirmations"] == 1
+    assert repo.get_record(outcome.record_id)["active"] is True
+
+    assert repo.record_missing(project_id, SourceType.ISSUE, set()) == 1
+    assert repo.deactivate_confirmed_missing(project_id) == [outcome.record_id]
+    assert repo.get_record(outcome.record_id)["active"] is False
+    assert repo.get_record(outcome.record_id)["deactivated_at"] is not None
+
+    repo.mark_seen(outcome.record_id, "sync-3")
+    restored = repo.get_record(outcome.record_id)
+    assert restored["active"] is True
+    assert restored["missing_confirmations"] == 0
+    assert restored["deactivated_at"] is None
+    assert restored["last_seen_sync_id"] == "sync-3"
+
+
 def test_project_lookup_is_owner_scoped(pg_conn, project) -> None:
     repo = IntelligenceRepository(pg_conn)
     project_id = str(project["id"])

@@ -1137,6 +1137,10 @@ intelligence_records_table = Table(
     Column("published_at", DateTime(timezone=True)),
     Column("retrieved_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("content_hash", Text, nullable=False),
+    Column("last_seen_sync_id", Text),
+    Column("missing_confirmations", Integer, nullable=False, server_default="0"),
+    Column("active", Boolean, nullable=False, server_default=text("true")),
+    Column("deactivated_at", DateTime(timezone=True)),
     Column("metadata", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     UniqueConstraint(
         "project_id",
@@ -1154,6 +1158,12 @@ Index(
     "intelligence_records_project_type_idx",
     intelligence_records_table.c.project_id,
     intelligence_records_table.c.source_type,
+)
+Index(
+    "intelligence_records_project_type_active_idx",
+    intelligence_records_table.c.project_id,
+    intelligence_records_table.c.source_type,
+    intelligence_records_table.c.active,
 )
 Index(
     "intelligence_records_created_idx",
