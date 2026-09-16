@@ -788,15 +788,18 @@ git commit -m "test(openscout): add reproducible retrieval evaluation"
 - 新建： `docsgpt/intelligence/filters.py`
 - 新建： `docsgpt/intelligence/reranker.py`
 - 修改： `docsgpt/intelligence/query_service.py`
+- 修改： `docsgpt/intelligence/schemas.py`
 - 新建： `tests/intelligence/test_filters.py`
 - 新建： `tests/intelligence/test_reranker.py`
 - 新建： `evaluation/configs/hybrid-rerank.yaml`
+- 修改： `evaluation/run_eval.py`
+- 新建： `evaluation/results/hybrid-rerank.dev.jsonl`
 
 **接口：**
 - 输入：`QueryFilters` 和 Hybrid 候选 `Evidence` 对象。
 - 输出：`merge_filters(explicit, inferred) -> QueryFilters`、协议 `Reranker.rerank(question, evidence, top_n) -> list[Evidence]` 和 `NoOpReranker` 回退。
 
-- [ ] **步骤 1：编写优先级和回退测试**
+- [x] **步骤 1：编写优先级和回退测试**
 
 ```python
 def test_explicit_filters_override_inferred_dates() -> None:
@@ -808,17 +811,17 @@ def test_reranker_failure_preserves_hybrid_order() -> None:
     assert safe_rerank(BrokenReranker(), "q", EVIDENCE, 5) == EVIDENCE[:5]
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_filters.py tests/intelligence/test_reranker.py -q`
 
 预期：FAIL，提示缺少模块。
 
-- [ ] **步骤 3：实现检索前元数据过滤**
+- [x] **步骤 3：实现检索前元数据过滤**
 
 检索前将仓库、来源类型、开始日期和结束日期编译到现有来源/向量元数据过滤器中。在追踪信息中同时记录显式与推断过滤值，并使用 `source: "explicit"|"inferred"` 标明来源。
 
-- [ ] **步骤 4：实现与服务商无关的重排接口**
+- [x] **步骤 4：实现与服务商无关的重排接口**
 
 ```python
 class Reranker(Protocol):
@@ -836,7 +839,7 @@ def safe_rerank(reranker: Reranker, question: str, evidence: Sequence[Evidence],
 
 只使用明确配置的重排器；不得暗中增加重量级模型依赖。在评估配置中保存服务商、模型和版本。
 
-- [ ] **步骤 5：评估、验证并提交**
+- [x] **步骤 5：评估、验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_filters.py tests/intelligence/test_reranker.py tests/intelligence/test_query_service.py -q`
 

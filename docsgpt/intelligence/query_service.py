@@ -1,12 +1,19 @@
-"""The first, hybrid-only OpenScout query application service."""
+"""The OpenScout query application service with optional filters and reranking."""
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
 from inspect import Parameter, signature
 from typing import Any
 
+from docsgpt.intelligence.filters import (
+    compile_metadata_filter,
+    filter_provenance,
+    merge_filters,
+)
+from docsgpt.intelligence.reranker import NoOpReranker, Reranker, safe_rerank
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
@@ -22,7 +29,19 @@ from docsgpt.intelligence.schemas import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 NO_EVIDENCE_ANSWER = "当前收录数据无法支持该结论。"
+
+
+def _optional_method(instance: Any, name: str) -> Any:
+    """Read an optional adapter method without triggering dynamic mocks."""
+    instance_attributes = getattr(instance, "__dict__", {})
+    if name in instance_attributes:
+        return instance_attributes[name]
+    if any(name in parent.__dict__ for parent in type(instance).__mro__):
+        return getattr(instance, name, None)
+    return None
 
 
 class _EmptyRetriever:
@@ -113,33 +132,77 @@ def enforce_citations(
 
 
 class QueryService:
-    """Execute the initial hybrid retrieval and evidence validation chain."""
+    """Execute hybrid retrieval, optional reranking, and evidence validation."""
 
     def __init__(
         self,
         retriever: Any | None = None,
         generator: Any | None = None,
         coverage: Callable[..., Coverage] | Coverage | None = None,
+        reranker: Reranker | None = None,
+        filter_inferer: Callable[[str], QueryFilters | Mapping[str, Any]] | None = None,
     ) -> None:
         """Initialize the service with injectable retrieval dependencies.
 
         Args:
-            retriever: Object exposing ``retrieve``; a DocsGPT retriever that
-                exposes only ``search`` is also supported as a narrow adapter.
-            generator: Object exposing ``generate(question, evidence)``.
-            coverage: A ``Coverage`` value or callable accepting filters and
+            retriever: Object exposing retrieve; a DocsGPT retriever that
+                exposes only search is also supported as a narrow adapter.
+            generator: Object exposing generate(question, evidence).
+            coverage: A Coverage value or callable accepting filters and
                 optionally the authenticated user id.
+            reranker: Optional provider-neutral reranker. When omitted, the
+                Hybrid order is preserved.
+            filter_inferer: Optional parser for implicit question filters.
         """
         self.retriever = retriever or _EmptyRetriever()
         self.generator = generator or _EvidenceOnlyGenerator()
         self.coverage = coverage or _empty_coverage
+        self.reranker = reranker
+        self.filter_inferer = filter_inferer
 
-    def _retrieve(self, request: QueryRequest) -> list[Evidence]:
+    def _infer_filters(self, question: str) -> QueryFilters:
+        """Resolve implicit filters without blocking a query on parser errors."""
+        if self.filter_inferer is None:
+            return QueryFilters()
+        try:
+            inferred = self.filter_inferer(question)
+            return (
+                inferred
+                if isinstance(inferred, QueryFilters)
+                else QueryFilters.model_validate(inferred)
+            )
+        except Exception:
+            logger.exception("filter inference failed; using explicit filters only")
+            return QueryFilters()
+
+    def _retrieve(
+        self,
+        request: QueryRequest,
+        filters: QueryFilters | None = None,
+    ) -> list[Evidence]:
         """Call the preferred retrieve method or adapt DocsGPT's search API."""
+        effective_filters = filters if filters is not None else request.filters
+        metadata_filter = compile_metadata_filter(effective_filters)
+        retrieve_filtered = _optional_method(self.retriever, "retrieve_filtered")
+        if callable(retrieve_filtered):
+            items = retrieve_filtered(
+                request.question,
+                effective_filters,
+                metadata_filter=metadata_filter,
+            )
+            return _coerce_evidence(items or [])
+
         retrieve = getattr(self.retriever, "retrieve", None)
         if callable(retrieve):
-            items = retrieve(request.question, request.filters)
+            items = retrieve(request.question, effective_filters)
         else:
+            search_filtered = _optional_method(self.retriever, "search_filtered")
+            if callable(search_filtered):
+                items = search_filtered(
+                    request.question,
+                    metadata_filter=metadata_filter,
+                )
+                return _coerce_evidence(items or [])
             search = getattr(self.retriever, "search", None)
             if not callable(search):
                 raise TypeError("retriever must expose retrieve or search")
@@ -168,10 +231,20 @@ class QueryService:
     def query(self, request: QueryRequest, user_id: str) -> QueryResult:
         """Retrieve evidence, generate claims, and return a traced result."""
         started = time.perf_counter()
-        evidence = self._retrieve(request)
+        explicit_filters = request.filters
+        inferred_filters = self._infer_filters(request.question)
+        effective_filters = merge_filters(explicit_filters, inferred_filters)
+        evidence = self._retrieve(request, effective_filters)
+        if self.reranker is not None:
+            evidence = safe_rerank(
+                self.reranker,
+                request.question,
+                evidence,
+                len(evidence),
+            )
         generated = self.generator.generate(request.question, evidence)
         answer, claims = _coerce_generated(generated)
-        coverage = self._coverage(request.filters, user_id)
+        coverage = self._coverage(effective_filters, user_id)
         claims = enforce_citations(
             claims=claims,
             evidence=evidence,
@@ -185,8 +258,19 @@ class QueryService:
             latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
             trace=RetrievalTrace(
                 intent=QueryIntent.FACTUAL,
-                strategy=RetrievalStrategy.HYBRID,
-                applied_filters=request.filters,
+                strategy=(
+                    RetrievalStrategy.HYBRID_RERANK
+                    if self.reranker is not None
+                    and not isinstance(self.reranker, NoOpReranker)
+                    else RetrievalStrategy.HYBRID
+                ),
+                applied_filters=effective_filters,
+                explicit_filters=explicit_filters,
+                inferred_filters=inferred_filters,
+                filter_sources=filter_provenance(
+                    explicit_filters,
+                    inferred_filters,
+                ),
             ),
         )
 

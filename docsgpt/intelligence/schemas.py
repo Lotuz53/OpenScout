@@ -191,6 +191,14 @@ class Coverage(IntelligenceModel):
     last_synced_at: datetime | None = None
 
 
+class FilterSource(IntelligenceModel):
+    """A filter value and the boundary that supplied it."""
+
+    field: Literal["repositories", "source_types", "date_from", "date_to"]
+    value: Any
+    source: Literal["explicit", "inferred"]
+
+
 class SyncSummary(IntelligenceModel):
     """The outcome of synchronizing a project."""
 
@@ -207,6 +215,9 @@ class RetrievalTrace(IntelligenceModel):
     strategy: RetrievalStrategy
     fallback_reason: str | None = None
     applied_filters: QueryFilters
+    explicit_filters: QueryFilters = Field(default_factory=QueryFilters)
+    inferred_filters: QueryFilters = Field(default_factory=QueryFilters)
+    filter_sources: list[FilterSource] = Field(default_factory=list)
 
 
 class QueryResult(IntelligenceModel):

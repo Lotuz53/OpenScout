@@ -1,0 +1,21 @@
+name: hybrid-rerank
+version: "1"
+snapshot_id: stage-a-2026-09-14
+dataset:
+  dev: evaluation/dataset/questions.dev.jsonl
+  holdout: evaluation/dataset/questions.holdout.jsonl
+executor:
+  type: fixture
+  corpus: tests/intelligence/fixtures/github_objects.json
+  strategy: hybrid_rerank
+  top_k: 10
+model:
+  provider: recorded_fixture
+  name: lexical-proxy-v1
+reranker:
+  provider: recorded_fixture
+  model: lexical-title-reranker
+  version: "1"
+  enabled: true
+promotion:
+  default: false

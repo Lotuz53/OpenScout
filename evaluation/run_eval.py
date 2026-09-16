@@ -319,7 +319,7 @@ class FixtureExecutor:
         record_tokens = _tokens(searchable)
         overlap = query_tokens & record_tokens
         score = len(overlap) / len(query_tokens)
-        if self.strategy == "hybrid":
+        if self.strategy.startswith("hybrid"):
             title_overlap = len(query_tokens & _tokens(record.title))
             score += 0.25 * title_overlap / len(query_tokens)
         return score
@@ -558,6 +558,7 @@ def _build_record(
         "executor": str(response.get("executor") or "custom"),
         "status": str(response.get("status") or "measured"),
         "retrieval_strategy": str(strategy),
+        "reranker": config.get("reranker"),
         "timestamp": timestamp,
     }
 
