@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -59,6 +59,36 @@ def test_iter_documents_uses_the_stage_a_document_scope() -> None:
     assert loader.load_data.call_args.args == ("o/r",)
     assert loader.load_data.call_args.kwargs["path_filter"]("README.md") is True
     assert loader.load_data.call_args.kwargs["path_filter"]("src/main.py") is False
+
+
+def test_repository_metadata_counts_only_syncable_issues_and_documents() -> None:
+    loader = MagicMock()
+    loader._make_request.side_effect = [
+        make_response({"private": False, "default_branch": "main", "size": 1}),
+        make_response({"total_count": 7, "items": []}),
+        make_response([], link='<https://api.github.com/repos/o/r/releases?page=2>; rel="last"'),
+    ]
+    entries = [
+        ("README.md", 100),
+        ("docs/guide.md", 100),
+        ("src/main.py", 100),
+        ("docs/data.json", 100),
+    ]
+    loader.fetch_repo_tree.return_value = (entries, False)
+    loader.select_files.return_value = [path for path, _ in entries]
+
+    metadata = GitHubClient(loader=loader).repository_metadata("o/r")
+
+    assert metadata["estimated_counts"] == {
+        "issues": 7,
+        "releases": 2,
+        "documents": 2,
+    }
+    assert loader._make_request.call_args_list[1] == call(
+        "https://api.github.com/search/issues",
+        params={"q": "repo:o/r is:issue", "per_page": 1},
+    )
+    loader.select_files.assert_called_once_with(entries)
 
 
 def test_iter_issues_follows_next_page_until_limit() -> None:

@@ -88,6 +88,10 @@ class GitHubClient:
         if match:
             return int(match.group(1))
         payload = response.json()
+        if isinstance(payload, Mapping):
+            total_count = payload.get("total_count")
+            if isinstance(total_count, int):
+                return max(0, total_count)
         return len(payload) if isinstance(payload, list) else 0
 
     def _estimate_collection_count(
@@ -150,8 +154,8 @@ class GitHubClient:
             return metadata
 
         issues, issues_warning = self._estimate_collection_count(
-            f"{GITHUB_API}/repos/{repo_name}/issues",
-            {"state": "all"},
+            f"{GITHUB_API}/search/issues",
+            {"q": f"repo:{repo_name} is:issue"},
         )
         releases, releases_warning = self._estimate_collection_count(
             f"{GITHUB_API}/repos/{repo_name}/releases",
@@ -160,7 +164,12 @@ class GitHubClient:
         documents_warning: str | None = None
         try:
             entries, truncated = self._loader.fetch_repo_tree(repo_name, default_branch)
-            documents = len(self._loader.select_files(entries))
+            if truncated:
+                paths = self._loader.fetch_repo_files(repo_name)
+                candidates = self._loader.select_files([(path, 0) for path in paths])
+            else:
+                candidates = self._loader.select_files(entries)
+            documents = sum(is_supported_document(path) for path in candidates)
             if truncated:
                 documents_warning = "文档数量估算受 GitHub 树接口上限影响"
         except Exception:
