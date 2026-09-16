@@ -14,5 +14,5 @@
 
 本次数据来自提交的 deterministic lexical proxy；0ms 延迟和 token 数不能外推到
 生产模型或网络服务。GitHub 抽样只覆盖三个仓库，并受每仓库 1,000 条 Issue、每条
-20 条评论上限影响。截图和短视频不在仓库中伪造，捕获位置与 PR 清单记录在
-[`limitations.md`](limitations.md)。
+20 条评论上限影响。五张真实 UI 截图已保存到 `evidence/`，连续短视频仍需维护者在目标
+环境录制；完整清单和外部阻塞记录在 [`limitations.md`](limitations.md)。

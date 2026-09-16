@@ -61,12 +61,13 @@ PDF 渲染器优先读取 `OPENSCOUT_CJK_FONT`，其次查找约定的
 
 ## 截图与短视频清单
 
-PR 需要由维护者在本地运行 UI 后保存以下材料。本次提交不伪造图片或视频，也不把
-未捕获的媒体写成已完成证据：
+以下五张截图已在隔离数据库和本地真实 UI 上捕获，并保留在仓库中作为演示证据；连续
+演示视频仍需维护者在目标环境中录制，不把未捕获的视频写成已完成证据：
 
-- [ ] `docs/openscout/evidence/01-overview.png`：概览页显示三个仓库覆盖范围；
-- [ ] `docs/openscout/evidence/02-workbench-query.png`：工作台问题、过滤器和结果摘要；
-- [ ] `docs/openscout/evidence/03-evidence-panel.png`：展开主张并打开 GitHub 来源；
-- [ ] `docs/openscout/evidence/04-comparison.png`：三产品矩阵及“尚未确认”单元格；
-- [ ] `docs/openscout/evidence/05-report-download.png`：六章节报告与 Markdown/PDF 下载；
+- [x] `docs/openscout/evidence/01-overview.png`：概览页显示三个仓库覆盖范围；
+- [x] `docs/openscout/evidence/02-workbench-query.png`：工作台问题、过滤器和结果摘要；
+- [x] `docs/openscout/evidence/03-evidence-panel.png`：展开主张并打开 GitHub 来源；
+- [x] `docs/openscout/evidence/04-comparison.png`：三产品矩阵及“尚未确认”单元格；
+- [x] `docs/openscout/evidence/05-report-download.png`：六章节报告与 Markdown/PDF 下载；
+- [x] `docs/openscout/evidence/06-shared-report.png`：只读分享报告显示覆盖范围和来源；
 - [ ] `docs/openscout/evidence/stage-a-demo.mp4`：不超过五分钟的连续演示，覆盖上述五个场景。

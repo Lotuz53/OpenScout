@@ -1283,7 +1283,7 @@ git commit -m "feat(openscout): present evidence comparisons and reports"
 - 新建： `evaluation/results/stage-a.json`
 - 新建： `docs/openscout/architecture.md`
 - 新建： `docs/openscout/limitations.md`
-- 新建： `README-openscout.md`
+- 修改： `README.md`
 - 修改： `docs/openscout/decision-log.md`
 - 修改： `evaluation/summarize.py`
 
@@ -1318,11 +1318,11 @@ def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
 
 预期：报告包含事实题正确率、引用准确率、复杂问题成功率、非 GraphRAG 平均延迟、token 成本和各门槛是否通过；只有所有跟踪指标下降不超过 5 个百分点时，回归检查才返回 0。之后不得修改封存问题。
 
-- [ ] **步骤 4：只记录实测结论并保存证明材料**
+- [x] **步骤 4：只记录实测结论并保存证明材料**
 
-`README-openscout.md` 必须披露 DocsGPT 底座、列出 OpenScout 原创工作、展示三组实验、链接失败案例、说明 GitHub Issue 抽样偏差，并使用摘要中的实测值。按照 PR 要求保存截图或短视频。
+根目录 `README.md` 必须披露 DocsGPT 底座、列出 OpenScout 原创工作、展示三组实验、链接失败案例、说明 GitHub Issue 抽样偏差，并使用摘要中的实测值。按照 PR 要求保存截图或短视频。
 
-> 当前状态：实测结论和限制已记录，但真实 UI 截图/短视频尚未捕获，因此本步骤不能标记为完成。
+> 实际验证（2026-09-17）：根目录 README 已按 OpenScout 项目呈现；隔离数据库上的真实 UI 已捕获概览、工作台、证据、对比、报告和只读分享截图并校正为 PNG。连续短视频尚未捕获，因此保留为外部待办。
 
 - [ ] **步骤 5：运行完整验证并提交**
 
@@ -1337,12 +1337,12 @@ def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
 预期：所有命令成功。若质量门槛未通过，保留实测结果并删除对应成功表述，不得修改门槛。
 
 ```bash
-git add tests/integration evaluation docs/openscout README-openscout.md
+git add tests/integration evaluation docs/openscout README.md
 git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
 
-> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。Task14 的报告渲染测试通过，但可复现的合规 CJK 字体资产尚未随仓库提供，发布前仍需通过配置或合规资源目录补齐。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此 Task14 的步骤 4、Task17 的步骤 4 和步骤 5 仍待补齐，不能把阶段 A 记为完全通过。
+> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。Task14 的报告渲染测试通过，但可复现的合规 CJK 字体资产尚未随仓库提供，发布前仍需通过配置或合规资源目录补齐。Task17 步骤 4 所需的五张真实 UI 截图已捕获并纳入本次证据提交；连续短视频仍待维护者录制。因此 Task14 的步骤 4 和 Task17 的步骤 5 仍待补齐，不能把阶段 A 记为完全通过。
 
 ## 阶段 A 自检记录
 
