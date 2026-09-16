@@ -110,6 +110,56 @@ export interface QueryResult {
   trace: RetrievalTrace;
 }
 
+export type ComparisonStatus = 'supported' | 'not_supported' | 'unknown';
+
+export interface ComparisonCell {
+  status: ComparisonStatus;
+  display_label: string;
+  first_evidence_date: string | null;
+  community_signal_count: number;
+  evidence_ids: string[];
+  coverage_warning: string | null;
+}
+
+export interface ComparisonRow {
+  dimension: string;
+  cells: Record<string, ComparisonCell>;
+}
+
+export interface ComparisonResult {
+  repositories: string[];
+  rows: ComparisonRow[];
+  coverage_warnings: Record<string, string | null>;
+}
+
+export interface ReportSection {
+  heading: string;
+  paragraphs: string[];
+  bullets: string[];
+}
+
+export interface ReportSource {
+  id: string;
+  title: string;
+  url: string;
+  repository: string;
+  source_type: string;
+  excerpt: string;
+}
+
+export interface ReportDocument {
+  title: string;
+  user_id: string;
+  project_ids: string[];
+  sections: ReportSection[];
+  sources: ReportSource[];
+  id: string | null;
+  source_ids: string[];
+  created_at: string;
+}
+
+export type ReportInput = QueryResult | ComparisonResult;
+
 export interface OverviewCoverage {
   date_from: string | null;
   date_to: string | null;

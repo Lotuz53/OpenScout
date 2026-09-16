@@ -1221,7 +1221,7 @@ git commit -m "feat(openscout): add intelligence overview and workbench"
 - 输入：`QueryResult`、对比单元格和报告接口。
 - 输出：按照 `summary -> analysis -> statistics -> evidence` 排序的结果、逐结论类型/可信度、可展开证据、对比单元格和下载操作。
 
-- [ ] **步骤 1：编写可信信息展示测试**
+- [x] **步骤 1：编写可信信息展示测试**
 
 ```tsx
 it('renders unsupported comparison cells as 尚未确认', () => {
@@ -1236,27 +1236,29 @@ it('opens every claim evidence source', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`cd frontend && npm test -- --run src/intelligence/ClaimCard.test.tsx src/intelligence/ComparisonMatrix.test.tsx src/intelligence/ReportView.test.tsx`
 
 预期：FAIL，因为组件尚不存在。
 
-- [ ] **步骤 3：实现证据优先的结果组件**
+- [x] **步骤 3：实现证据优先的结果组件**
 
 标准图标使用 `lucide-react`。每张证据卡展示来源类型、仓库、日期/版本、摘要和外部 GitHub 链接。展示 `事实`、`统计` 或 `AI 推断`，以及确定性的 `低/中/高` 可信度。在结果顶部展示数据过期和 GraphRAG 回退提示。
 
-- [ ] **步骤 4：实现矩阵和报告流程**
+- [x] **步骤 4：实现矩阵和报告流程**
 
 矩阵单元格展示支持状态、首个证据日期、社区信号数量和可展开来源。未知单元格显示 `尚未确认`。ReportView 展示六个固定报告章节，并在不重新运行分析的情况下触发 Markdown/PDF 下载。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`cd frontend && npm test -- --run src/intelligence`
 
 运行：`cd frontend && npm run build`
 
 预期：测试 PASS，生产构建成功。
+
+> 实际验证：`src/intelligence` 测试 9/9 通过；Task 16 新增组件、Workbench、服务和契约的定向 lint 通过；TypeScript 与生产构建通过。构建仍提示现有 Node/Vite 版本和大 chunk 警告，未扩大修改范围。
 
 ```bash
 git add frontend/src/intelligence

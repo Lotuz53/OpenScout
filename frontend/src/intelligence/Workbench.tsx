@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { selectToken } from '../preferences/preferenceSlice';
 import { type AppDispatch } from '../store';
+import intelligenceService from './intelligenceService';
 import {
   loadProjects,
   queryIntelligence,
@@ -22,7 +23,19 @@ import {
   setFilters,
   setQuestion,
 } from './intelligenceSlice';
-import type { QueryIntent, SourceType } from './types';
+import ClaimCard from './ClaimCard';
+import ComparisonMatrix from './ComparisonMatrix';
+import EvidencePanel, { formatEvidenceDate } from './EvidencePanel';
+import ReportView, { type ReportDownloadFormat } from './ReportView';
+import type {
+  ComparisonResult,
+  QueryFilterPayload,
+  QueryFilters,
+  QueryIntent,
+  ReportDocument,
+  RequestStatus,
+  SourceType,
+} from './types';
 
 const REPOSITORIES = [
   { label: 'Dify', value: 'langgenius/dify' },
@@ -96,6 +109,21 @@ function statusLabel(status: string): string {
   );
 }
 
+function explicitFilterPayload(filters: QueryFilters): QueryFilterPayload {
+  const payload: QueryFilterPayload = {};
+  if (filters.repositories.length) payload.repositories = filters.repositories;
+  if (filters.source_types.length) payload.source_types = filters.source_types;
+  if (filters.date_from) payload.date_from = filters.date_from;
+  if (filters.date_to) payload.date_to = filters.date_to;
+  return payload;
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+const COMPARISON_DIMENSIONS = ['enterprise_sso'];
+
 export default function Workbench() {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
@@ -109,6 +137,15 @@ export default function Workbench() {
     error,
   } = useSelector(selectIntelligence);
   const [questionType, setQuestionType] = useState<QueryIntent>('factual');
+  const [comparison, setComparison] = useState<ComparisonResult | null>(null);
+  const [comparisonStatus, setComparisonStatus] =
+    useState<RequestStatus>('idle');
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const [report, setReport] = useState<ReportDocument | null>(null);
+  const [reportStatus, setReportStatus] = useState<RequestStatus>('idle');
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [downloadingFormat, setDownloadingFormat] =
+    useState<ReportDownloadFormat | null>(null);
 
   useEffect(() => {
     if (projectsStatus === 'idle') dispatch(loadProjects());
@@ -130,7 +167,91 @@ export default function Workbench() {
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setComparison(null);
+    setComparisonStatus('idle');
+    setComparisonError(null);
+    setReport(null);
+    setReportStatus('idle');
+    setReportError(null);
     dispatch(queryIntelligence({ question, filters }));
+  };
+
+  const selectedProjectIds = projects
+    .filter(
+      (project) =>
+        !filters.repositories.length ||
+        filters.repositories.includes(project.repository),
+    )
+    .map((project) => project.id);
+
+  const handleComparison = async () => {
+    if (!selectedProjectIds.length) {
+      setComparisonError('当前范围没有可用于对比的已同步产品。');
+      return;
+    }
+    setComparisonStatus('loading');
+    setComparisonError(null);
+    try {
+      const result = await intelligenceService.compare({
+        project_ids: selectedProjectIds,
+        dimensions: COMPARISON_DIMENSIONS,
+        filters: explicitFilterPayload(filters),
+        token,
+      });
+      setComparison(result);
+      setComparisonStatus('succeeded');
+    } catch (error) {
+      setComparisonStatus('failed');
+      setComparisonError(errorMessage(error, '无法生成产品对比。'));
+    }
+  };
+
+  const handleCreateReport = async () => {
+    if (!queryResult) return;
+    if (!selectedProjectIds.length) {
+      setReportError('当前范围没有可用于生成报告的已同步产品。');
+      return;
+    }
+    setReportStatus('loading');
+    setReportError(null);
+    try {
+      const results = comparison ? [queryResult, comparison] : [queryResult];
+      const savedReport = await intelligenceService.createReport({
+        project_ids: selectedProjectIds,
+        results,
+        token,
+      });
+      setReport(savedReport);
+      setReportStatus('succeeded');
+    } catch (error) {
+      setReportStatus('failed');
+      setReportError(errorMessage(error, '无法保存情报报告。'));
+    }
+  };
+
+  const handleDownload = async (format: ReportDownloadFormat) => {
+    if (!report?.id) return;
+    setDownloadingFormat(format);
+    setReportError(null);
+    try {
+      const blob = await intelligenceService.downloadReport({
+        reportId: report.id,
+        format,
+        token,
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = `openscout-report-${report.id}.${format === 'markdown' ? 'md' : 'pdf'}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setReportError(errorMessage(error, '无法下载报告，请稍后重试。'));
+    } finally {
+      setDownloadingFormat(null);
+    }
   };
 
   const selectedRepositoryLabel = filters.repositories.length
@@ -142,6 +263,10 @@ export default function Workbench() {
         )
         .join('、')
     : '全部固定产品';
+  const analysisClaims =
+    queryResult?.claims.filter((claim) => claim.kind !== 'statistic') ?? [];
+  const statisticClaims =
+    queryResult?.claims.filter((claim) => claim.kind === 'statistic') ?? [];
 
   return (
     <div className="min-h-full bg-[#f6f4ed] px-5 py-8 text-[#20241f] md:px-10 md:py-10 lg:px-14 dark:bg-[#111511] dark:text-[#f2f3e9]">
@@ -442,57 +567,256 @@ export default function Workbench() {
                   选择范围并提出问题，开始生成有证据的产品情报。
                 </div>
               ) : (
-                <div className="mt-6">
-                  {queryResult.coverage.capped && (
-                    <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
-                      <CircleAlert className="mt-0.5 size-4 shrink-0" />
-                      <span>当前结果来自部分覆盖，解读时请保留谨慎。</span>
+                <div className="mt-6 space-y-6">
+                  {(queryResult.coverage.capped ||
+                    queryResult.coverage.last_synced_at ||
+                    queryResult.trace.fallback_reason) && (
+                    <div className="space-y-2 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
+                      {queryResult.coverage.capped && (
+                        <p className="flex items-start gap-3">
+                          <CircleAlert className="mt-1 size-4 shrink-0" />
+                          <span>当前结果来自部分覆盖，解读时请保留谨慎。</span>
+                        </p>
+                      )}
+                      {queryResult.coverage.last_synced_at && (
+                        <p>
+                          数据最后同步于{' '}
+                          {formatEvidenceDate(
+                            queryResult.coverage.last_synced_at,
+                          )}
+                          。覆盖窗口：
+                          {queryResult.coverage.date_from ?? '起始时间未知'}
+                          {' → '}
+                          {queryResult.coverage.date_to ?? '当前'}。
+                        </p>
+                      )}
+                      {queryResult.trace.fallback_reason && (
+                        <p>
+                          GraphRAG 未完成，已回退到混合检索：
+                          {queryResult.trace.fallback_reason}
+                        </p>
+                      )}
                     </div>
                   )}
-                  <p className="text-foreground text-base leading-7 whitespace-pre-wrap">
-                    {queryResult.answer}
-                  </p>
-                  <div className="mt-6 grid gap-3 text-xs sm:grid-cols-3">
-                    <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
-                      <span className="text-muted-foreground block">
-                        路由意图
+
+                  <section
+                    aria-labelledby="result-summary-title"
+                    className="rounded-2xl border border-black/10 bg-[#fbfaf5] p-5 dark:border-white/10 dark:bg-[#171d17]"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-300">
+                        01 / SUMMARY
                       </span>
-                      <span className="text-foreground mt-1 block font-mono">
-                        {queryResult.trace.intent}
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
-                      <span className="text-muted-foreground block">
-                        结论 / 证据
-                      </span>
-                      <span className="text-foreground mt-1 block font-mono">
-                        {queryResult.claims.length} /{' '}
-                        {queryResult.evidence.length}
-                      </span>
-                    </div>
-                    <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
-                      <span className="text-muted-foreground block">
-                        覆盖记录
-                      </span>
-                      <span className="text-foreground mt-1 block font-mono">
-                        {Object.values(queryResult.coverage.counts).reduce(
-                          (total, count) => total + (count ?? 0),
-                          0,
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    {SOURCE_OPTIONS.map((source) => (
-                      <span
-                        key={source.value}
-                        className="text-muted-foreground rounded-full border border-black/10 px-3 py-1 font-mono text-[10px] dark:border-white/10"
+                      <h3
+                        id="result-summary-title"
+                        className="text-sm font-semibold"
                       >
-                        {source.label} ·{' '}
-                        {sourceCount(queryResult.coverage.counts, source.value)}
+                        执行摘要
+                      </h3>
+                    </div>
+                    <p className="mt-4 text-base leading-7 whitespace-pre-wrap text-[#20241f] dark:text-[#f2f3e9]">
+                      {queryResult.answer}
+                    </p>
+                    <div className="mt-6 grid gap-3 text-xs sm:grid-cols-3">
+                      <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
+                        <span className="text-muted-foreground block">
+                          路由意图
+                        </span>
+                        <span className="text-foreground mt-1 block font-mono">
+                          {queryResult.trace.intent}
+                        </span>
+                      </div>
+                      <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
+                        <span className="text-muted-foreground block">
+                          结论 / 证据
+                        </span>
+                        <span className="text-foreground mt-1 block font-mono">
+                          {queryResult.claims.length} /{' '}
+                          {queryResult.evidence.length}
+                        </span>
+                      </div>
+                      <div className="rounded-xl bg-black/[0.04] p-3 dark:bg-white/[0.05]">
+                        <span className="text-muted-foreground block">
+                          覆盖记录
+                        </span>
+                        <span className="text-foreground mt-1 block font-mono">
+                          {Object.values(queryResult.coverage.counts).reduce(
+                            (total, count) => total + (count ?? 0),
+                            0,
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {SOURCE_OPTIONS.map((source) => (
+                        <span
+                          key={source.value}
+                          className="text-muted-foreground rounded-full border border-black/10 px-3 py-1 font-mono text-[10px] dark:border-white/10"
+                        >
+                          {source.label} ·{' '}
+                          {sourceCount(
+                            queryResult.coverage.counts,
+                            source.value,
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section aria-labelledby="analysis-claims-title">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-[10px] tracking-[0.16em] text-emerald-700 uppercase dark:text-emerald-300">
+                          02 / ANALYSIS
+                        </p>
+                        <h3
+                          id="analysis-claims-title"
+                          className="mt-2 text-lg font-semibold"
+                        >
+                          结构化分析
+                        </h3>
+                      </div>
+                      <span className="text-muted-foreground font-mono text-xs">
+                        {analysisClaims.length} 条结论
                       </span>
-                    ))}
-                  </div>
+                    </div>
+                    {analysisClaims.length ? (
+                      <div className="mt-4 space-y-3">
+                        {analysisClaims.map((claim) => (
+                          <ClaimCard
+                            key={claim.id}
+                            claim={claim}
+                            evidence={queryResult.evidence}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground mt-4 rounded-xl border border-dashed border-black/15 px-4 py-5 text-sm dark:border-white/15">
+                        当前回答没有可单独展示的事实或推断结论。
+                      </p>
+                    )}
+                  </section>
+
+                  <section aria-labelledby="statistics-title">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <div>
+                        <p className="font-mono text-[10px] tracking-[0.16em] text-emerald-700 uppercase dark:text-emerald-300">
+                          03 / STATISTICS
+                        </p>
+                        <h3
+                          id="statistics-title"
+                          className="mt-2 text-lg font-semibold"
+                        >
+                          确定性统计
+                        </h3>
+                      </div>
+                      <span className="text-muted-foreground font-mono text-xs">
+                        {statisticClaims.length} 条统计
+                      </span>
+                    </div>
+                    {statisticClaims.length ? (
+                      <div className="mt-4 space-y-3">
+                        {statisticClaims.map((claim) => (
+                          <ClaimCard
+                            key={claim.id}
+                            claim={claim}
+                            evidence={queryResult.evidence}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground mt-4 rounded-xl border border-dashed border-black/15 px-4 py-5 text-sm dark:border-white/15">
+                        当前回答没有独立的统计结论。
+                      </p>
+                    )}
+                  </section>
+
+                  <section aria-labelledby="evidence-title">
+                    <div>
+                      <p className="font-mono text-[10px] tracking-[0.16em] text-emerald-700 uppercase dark:text-emerald-300">
+                        04 / EVIDENCE
+                      </p>
+                      <h3
+                        id="evidence-title"
+                        className="mt-2 text-lg font-semibold"
+                      >
+                        原始证据
+                      </h3>
+                    </div>
+                    <EvidencePanel
+                      evidence={queryResult.evidence}
+                      heading="本次回答返回的全部来源"
+                    />
+                  </section>
+
+                  <section className="rounded-2xl border border-dashed border-[#1f6b4d]/40 bg-emerald-50/50 p-5 dark:border-emerald-400/30 dark:bg-emerald-950/10">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-mono text-[10px] tracking-[0.16em] text-emerald-700 uppercase dark:text-emerald-300">
+                          Next research move
+                        </p>
+                        <h3 className="mt-2 text-sm font-semibold">
+                          把当前结果推进为对比或报告
+                        </h3>
+                        <p className="text-muted-foreground mt-1 text-xs leading-5">
+                          两个动作都会复用本次已返回的数据和明确范围。
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={comparisonStatus === 'loading'}
+                          onClick={() => void handleComparison()}
+                          className="rounded-full"
+                        >
+                          {comparisonStatus === 'loading' ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : null}
+                          运行产品对比
+                        </Button>
+                        <Button
+                          type="button"
+                          disabled={reportStatus === 'loading'}
+                          onClick={() => void handleCreateReport()}
+                          className="rounded-full bg-[#1f6b4d] text-white hover:bg-[#18563e]"
+                        >
+                          {reportStatus === 'loading' ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : null}
+                          生成报告
+                        </Button>
+                      </div>
+                    </div>
+                    {comparisonError && (
+                      <p className="mt-3 text-xs leading-5 text-red-700 dark:text-red-200">
+                        {comparisonError}
+                      </p>
+                    )}
+                    {!report && reportError && (
+                      <p className="mt-3 text-xs leading-5 text-red-700 dark:text-red-200">
+                        {reportError}
+                      </p>
+                    )}
+                  </section>
+
+                  {comparison && (
+                    <section className="rounded-2xl border border-black/10 bg-white/60 p-5 dark:border-white/10 dark:bg-white/[0.025]">
+                      <ComparisonMatrix
+                        rows={comparison.rows}
+                        evidence={queryResult.evidence}
+                      />
+                    </section>
+                  )}
+
+                  {report && (
+                    <ReportView
+                      report={report}
+                      onDownload={handleDownload}
+                      downloadingFormat={downloadingFormat}
+                      downloadError={reportError}
+                    />
+                  )}
                 </div>
               )}
             </section>
