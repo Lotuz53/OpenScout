@@ -909,6 +909,95 @@ class IntelligenceRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def create_report_share(
+        self,
+        report_id: str,
+        user_id: str,
+        token_hash: str,
+    ) -> dict[str, Any] | None:
+        """Create or replace a public share for an owned report.
+
+        Args:
+            report_id: UUID of the report to share.
+            user_id: Authenticated report owner identifier.
+            token_hash: SHA-256 digest of the one-time returned token.
+
+        Returns:
+            The share identifier and timestamp, or ``None`` when the report
+            is missing or belongs to another user.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_reports
+                SET share_token_hash = :token_hash,
+                    shared_at = now(),
+                    revoked_at = NULL
+                WHERE id = CAST(:report_id AS uuid)
+                  AND user_id = :user_id
+                RETURNING id::text AS report_id, shared_at
+                """
+            ),
+            {
+                "report_id": report_id,
+                "user_id": user_id,
+                "token_hash": token_hash,
+            },
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def revoke_report_share(
+        self,
+        report_id: str,
+        user_id: str,
+    ) -> dict[str, Any] | None:
+        """Revoke a public share only when the report belongs to ``user_id``.
+
+        The digest is retained for auditability, while ``revoked_at`` makes
+        the public lookup unusable. Repeating the operation is idempotent for
+        an existing owned report.
+
+        Args:
+            report_id: UUID of the report whose public link should be revoked.
+            user_id: Authenticated report owner identifier.
+
+        Returns:
+            The report identifier and revocation timestamp, or ``None`` when
+            the report is missing or belongs to another user.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_reports
+                SET revoked_at = now()
+                WHERE id = CAST(:report_id AS uuid)
+                  AND user_id = :user_id
+                RETURNING id::text AS report_id, revoked_at
+                """
+            ),
+            {"report_id": report_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def get_public_report(self, token_hash: str) -> dict[str, Any] | None:
+        """Return the minimal report row for an active public token digest."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT report_data, created_at
+                FROM intelligence_reports
+                WHERE share_token_hash = :token_hash
+                  AND shared_at IS NOT NULL
+                  AND revoked_at IS NULL
+                """
+            ),
+            {"token_hash": token_hash},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
 
 def _analytics_scope(
     user_id: str,

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import hashlib
 import logging
 from datetime import date, datetime, timezone
+import secrets
 from typing import Any
 
 from flask import jsonify, make_response, request
@@ -74,6 +76,7 @@ def _json_row(row: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     rendered = dict(row)
     rendered.pop("_id", None)
+    rendered.pop("share_token_hash", None)
     for key, value in list(rendered.items()):
         if hasattr(value, "isoformat"):
             rendered[key] = value.isoformat()
@@ -505,6 +508,61 @@ class IntelligenceReport(Resource):
             return _error("internal error", 500)
 
 
+@intelligence_ns.route("/intelligence/reports/<string:report_id>/share")
+class IntelligenceReportShare(Resource):
+    """Create or revoke one owner-scoped public report link."""
+
+    def post(self, report_id: str):
+        """Create a new share token and return its plaintext once."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        if not looks_like_uuid(report_id):
+            return _error("report_id must be a UUID", 400)
+
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            with db_session() as conn:
+                row = IntelligenceRepository(conn).create_report_share(
+                    report_id, user_id, token_hash
+                )
+            if row is None:
+                return _error("report not found", 404)
+            return _ok(
+                {
+                    "share": {
+                        "token": token,
+                        "path": f"/reports/shared/{token}",
+                        "shared_at": _json_row(row).get("shared_at"),
+                    }
+                },
+                201,
+            )
+        except Exception:
+            logger.exception("Could not create intelligence report share")
+            return _error("internal error", 500)
+
+    def delete(self, report_id: str):
+        """Revoke a public report link without returning report contents."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        if not looks_like_uuid(report_id):
+            return _error("report_id must be a UUID", 400)
+        try:
+            with db_session() as conn:
+                row = IntelligenceRepository(conn).revoke_report_share(
+                    report_id, user_id
+                )
+            if row is None:
+                return _error("report not found", 404)
+            return make_response("", 204)
+        except Exception:
+            logger.exception("Could not revoke intelligence report share")
+            return _error("internal error", 500)
+
+
 @intelligence_ns.route("/intelligence/reports/<string:report_id>/download")
 class IntelligenceReportDownload(Resource):
     """Download a saved report as Markdown or PDF."""
@@ -554,6 +612,7 @@ __all__ = [
     "IntelligenceOverview",
     "IntelligenceReport",
     "IntelligenceReportDownload",
+    "IntelligenceReportShare",
     "IntelligenceReports",
     "IntelligenceProject",
     "IntelligenceProjectSync",

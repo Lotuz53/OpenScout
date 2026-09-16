@@ -176,6 +176,39 @@ export interface ReportDocument {
   created_at: string;
 }
 
+export interface ReportShare {
+  token: string;
+  path: string;
+  shared_at: string | null;
+}
+
+export interface SharedReportSection {
+  heading: string;
+  paragraphs: string[];
+  bullets: string[];
+}
+
+export interface SharedReportSource {
+  title: string;
+  url: string;
+}
+
+export interface SharedReportCoverage {
+  repositories: string[];
+  date_from: string | null;
+  date_to: string | null;
+  counts: Record<string, number>;
+  capped: boolean;
+}
+
+export interface SharedReport {
+  title: string;
+  sections: SharedReportSection[];
+  sources: SharedReportSource[];
+  coverage: SharedReportCoverage;
+  created_at: string | null;
+}
+
 export type ReportInput = QueryResult | ComparisonResult;
 
 export interface OverviewCoverage {

@@ -217,7 +217,7 @@ git commit -m "feat(openscout): schedule and explain intelligence syncs"
 - 输入：阶段 A 报告 JSON。
 - 输出：需要认证的 `POST /api/intelligence/reports/<id>/share` 和 `DELETE /api/intelligence/reports/<id>/share`、无需认证的 Flask 蓝图路由 `GET /api/public/intelligence/reports/<token>`，以及前端路由 `/reports/shared/:token`。
 
-- [ ] **步骤 1：编写所有权、撤销和脱敏测试**
+- [x] **步骤 1：编写所有权、撤销和脱敏测试**
 
 ```python
 def test_public_report_projection_redacts_internal_fields(client, shared_report) -> None:
@@ -232,21 +232,21 @@ def test_revoked_token_returns_not_found(client, revoked_token) -> None:
     assert client.get(f"/api/public/intelligence/reports/{revoked_token}").status_code == 404
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/api/user/intelligence/test_report_sharing.py -q`
 
 预期：FAIL，提示缺少接口或数据库字段。
 
-- [ ] **步骤 3：增加哈希令牌和公开数据投影**
+- [x] **步骤 3：增加哈希令牌和公开数据投影**
 
 使用 `secrets.token_urlsafe(32)` 生成 32 个随机字节，只存储 SHA-256 令牌哈希以及 `shared_at`/`revoked_at`；仅在创建分享时返回一次明文令牌。在 `docsgpt/app.py` 注册独立的公开 Flask 蓝图，不得削弱需要认证的用户命名空间。公开序列化只允许报告标题、章节、来源 URL、覆盖范围和生成时间。
 
-- [ ] **步骤 4：实现公开界面和所有者控制**
+- [x] **步骤 4：实现公开界面和所有者控制**
 
 所有者可以创建、复制和撤销链接。公开路由无需认证，只提供只读报告和来源链接；不得暴露编辑、重新同步、下载私有产物或查看内部追踪的操作。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m alembic -c docsgpt/alembic.ini upgrade head`
 

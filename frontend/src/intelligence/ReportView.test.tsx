@@ -40,4 +40,27 @@ describe('report view', () => {
     expect(markup).toContain('下载 Markdown');
     expect(markup).toContain('下载 PDF');
   });
+
+  it('shows owner controls for creating, copying, and revoking a share link', () => {
+    const createMarkup = renderToStaticMarkup(
+      <ReportView report={report} onCreateShare={vi.fn()} />,
+    );
+    const activeMarkup = renderToStaticMarkup(
+      <ReportView
+        report={report}
+        share={{
+          token: 'share-token',
+          path: '/reports/shared/share-token',
+          shared_at: '2026-03-01T00:00:00Z',
+        }}
+        onCopyShare={vi.fn()}
+        onRevokeShare={vi.fn()}
+      />,
+    );
+
+    expect(createMarkup).toContain('生成分享链接');
+    expect(activeMarkup).toContain('/reports/shared/share-token');
+    expect(activeMarkup).toContain('复制链接');
+    expect(activeMarkup).toContain('撤销链接');
+  });
 });

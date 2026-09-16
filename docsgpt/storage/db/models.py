@@ -1213,6 +1213,9 @@ intelligence_reports_table = Table(
     Column("report_data", JSONB, nullable=False),
     Column("markdown_path", Text),
     Column("pdf_path", Text),
+    Column("share_token_hash", CHAR(64)),
+    Column("shared_at", DateTime(timezone=True)),
+    Column("revoked_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     ForeignKeyConstraint(

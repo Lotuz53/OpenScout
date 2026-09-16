@@ -33,6 +33,7 @@ import type {
   QueryFilters,
   QueryIntent,
   ReportDocument,
+  ReportShare,
   RequestStatus,
   SourceType,
 } from './types';
@@ -146,6 +147,10 @@ export default function Workbench() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [downloadingFormat, setDownloadingFormat] =
     useState<ReportDownloadFormat | null>(null);
+  const [reportShare, setReportShare] = useState<ReportShare | null>(null);
+  const [sharingReport, setSharingReport] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   useEffect(() => {
     if (projectsStatus === 'idle') dispatch(loadProjects());
@@ -222,6 +227,9 @@ export default function Workbench() {
         token,
       });
       setReport(savedReport);
+      setReportShare(null);
+      setShareCopied(false);
+      setShareError(null);
       setReportStatus('succeeded');
     } catch (error) {
       setReportStatus('failed');
@@ -251,6 +259,52 @@ export default function Workbench() {
       setReportError(errorMessage(error, '无法下载报告，请稍后重试。'));
     } finally {
       setDownloadingFormat(null);
+    }
+  };
+
+  const handleCreateShare = async () => {
+    if (!report?.id) return;
+    setSharingReport(true);
+    setShareError(null);
+    setShareCopied(false);
+    try {
+      const share = await intelligenceService.createReportShare(
+        report.id,
+        token,
+      );
+      setReportShare(share);
+    } catch (error) {
+      setShareError(errorMessage(error, '无法生成分享链接，请稍后重试。'));
+    } finally {
+      setSharingReport(false);
+    }
+  };
+
+  const handleCopyShare = async (path: string) => {
+    setShareError(null);
+    try {
+      if (!navigator.clipboard) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(
+        new URL(path, window.location.origin).toString(),
+      );
+      setShareCopied(true);
+    } catch {
+      setShareError('无法复制分享链接，请手动复制。');
+    }
+  };
+
+  const handleRevokeShare = async () => {
+    if (!report?.id) return;
+    setSharingReport(true);
+    setShareError(null);
+    try {
+      await intelligenceService.revokeReportShare(report.id, token);
+      setReportShare(null);
+      setShareCopied(false);
+    } catch (error) {
+      setShareError(errorMessage(error, '无法撤销分享链接，请稍后重试。'));
+    } finally {
+      setSharingReport(false);
     }
   };
 
@@ -815,6 +869,13 @@ export default function Workbench() {
                       onDownload={handleDownload}
                       downloadingFormat={downloadingFormat}
                       downloadError={reportError}
+                      share={reportShare}
+                      onCreateShare={handleCreateShare}
+                      onCopyShare={handleCopyShare}
+                      onRevokeShare={handleRevokeShare}
+                      sharing={sharingReport}
+                      shareCopied={shareCopied}
+                      shareError={shareError}
                     />
                   )}
                 </div>

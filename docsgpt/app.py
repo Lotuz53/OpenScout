@@ -24,6 +24,7 @@ from docsgpt.api.events.routes import events  # noqa: E402
 from docsgpt.api.internal.routes import internal  # noqa: E402
 from docsgpt.api.oidc import oidc_bp  # noqa: E402
 from docsgpt.api.oidc.denylist import is_denied as oidc_session_denied  # noqa: E402
+from docsgpt.api.public import public_intelligence  # noqa: E402
 from docsgpt.api.scim import scim_bp  # noqa: E402
 from docsgpt.api.user.authz import resolve_roles  # noqa: E402
 from docsgpt.api.user.routes import user  # noqa: E402
@@ -97,6 +98,7 @@ from docsgpt.agents.default_tools import (  # noqa: E402
 validate_default_chat_tools()
 
 app = Flask(__name__)
+app.register_blueprint(public_intelligence)
 app.register_blueprint(user)
 app.register_blueprint(answer)
 app.register_blueprint(events)
@@ -317,6 +319,12 @@ def authenticate_request():
     # SCIM provisioning authenticates with its own bearer token (SCIM_TOKEN),
     # validated inside the blueprint.
     if request.path.startswith("/scim/"):
+        request.decoded_token = None
+        return None
+    # Public OpenScout report links use high-entropy path tokens and must stay
+    # reachable without a browser session, including when a stale bearer
+    # token is still attached by the frontend.
+    if request.path.startswith("/api/public/intelligence/"):
         request.decoded_token = None
         return None
     decoded_token = handle_auth(request)

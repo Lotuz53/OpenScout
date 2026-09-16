@@ -174,6 +174,10 @@ const endpoints = {
       `/api/intelligence/reports/${encodeURIComponent(id)}`,
     REPORT_DOWNLOAD: (id: string, format: 'markdown' | 'pdf') =>
       `/api/intelligence/reports/${encodeURIComponent(id)}/download?format=${format}`,
+    REPORT_SHARE: (id: string) =>
+      `/api/intelligence/reports/${encodeURIComponent(id)}/share`,
+    PUBLIC_REPORT: (token: string) =>
+      `/api/public/intelligence/reports/${encodeURIComponent(token)}`,
   },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',

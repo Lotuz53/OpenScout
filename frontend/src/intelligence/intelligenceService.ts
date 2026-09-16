@@ -9,7 +9,9 @@ import type {
   QueryResult,
   ReportDocument,
   ReportInput,
+  ReportShare,
   RepositoryPreflight,
+  SharedReport,
 } from './types';
 
 interface ProjectsResponse {
@@ -37,6 +39,14 @@ interface ComparisonResponse {
 }
 
 interface ReportResponse {
+  report: unknown;
+}
+
+interface ReportShareResponse {
+  share: ReportShare;
+}
+
+interface SharedReportResponse {
   report: unknown;
 }
 
@@ -171,6 +181,93 @@ function normalizeReport(value: unknown): ReportDocument {
   return report as unknown as ReportDocument;
 }
 
+function normalizeSharedReport(value: unknown): SharedReport {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('共享报告响应缺少 report 字段。');
+  }
+
+  const row = value as Record<string, unknown>;
+  const title = row.title;
+  const sections = row.sections;
+  const sources = row.sources;
+  const coverage = row.coverage;
+  if (
+    typeof title !== 'string' ||
+    !Array.isArray(sections) ||
+    !Array.isArray(sources) ||
+    typeof coverage !== 'object' ||
+    coverage === null
+  ) {
+    throw new Error('共享报告响应缺少结构化内容。');
+  }
+
+  const normalizedSections = sections.map((section) => {
+    if (typeof section !== 'object' || section === null) {
+      throw new Error('共享报告章节格式无效。');
+    }
+    const item = section as Record<string, unknown>;
+    if (
+      typeof item.heading !== 'string' ||
+      !Array.isArray(item.paragraphs) ||
+      !Array.isArray(item.bullets) ||
+      item.paragraphs.some((paragraph) => typeof paragraph !== 'string') ||
+      item.bullets.some((bullet) => typeof bullet !== 'string')
+    ) {
+      throw new Error('共享报告章节格式无效。');
+    }
+    return {
+      heading: item.heading,
+      paragraphs: item.paragraphs as string[],
+      bullets: item.bullets as string[],
+    };
+  });
+
+  const normalizedSources = sources.map((source) => {
+    if (typeof source !== 'object' || source === null) {
+      throw new Error('共享报告来源格式无效。');
+    }
+    const item = source as Record<string, unknown>;
+    if (typeof item.title !== 'string' || typeof item.url !== 'string') {
+      throw new Error('共享报告来源格式无效。');
+    }
+    return { title: item.title, url: item.url };
+  });
+
+  const rawCoverage = coverage as Record<string, unknown>;
+  const rawCounts = rawCoverage.counts;
+  const counts: Record<string, number> = {};
+  if (typeof rawCounts === 'object' && rawCounts !== null) {
+    for (const [key, count] of Object.entries(rawCounts)) {
+      if (typeof count === 'number' && Number.isFinite(count)) {
+        counts[key] = count;
+      }
+    }
+  }
+
+  return {
+    title,
+    sections: normalizedSections,
+    sources: normalizedSources,
+    coverage: {
+      repositories: Array.isArray(rawCoverage.repositories)
+        ? rawCoverage.repositories.filter(
+            (repository): repository is string =>
+              typeof repository === 'string',
+          )
+        : [],
+      date_from:
+        typeof rawCoverage.date_from === 'string'
+          ? rawCoverage.date_from
+          : null,
+      date_to:
+        typeof rawCoverage.date_to === 'string' ? rawCoverage.date_to : null,
+      counts,
+      capped: rawCoverage.capped === true,
+    },
+    created_at: typeof row.created_at === 'string' ? row.created_at : null,
+  };
+}
+
 const intelligenceService = {
   async preflight(
     repository: string,
@@ -262,6 +359,47 @@ const intelligenceService = {
       await apiClient.get(endpoints.INTELLIGENCE.REPORT(reportId), token),
     );
     return normalizeReport(response.report);
+  },
+
+  async createReportShare(
+    reportId: string,
+    token: string | null,
+  ): Promise<ReportShare> {
+    const response = await readJson<ReportShareResponse>(
+      await apiClient.post(
+        endpoints.INTELLIGENCE.REPORT_SHARE(reportId),
+        {},
+        token,
+      ),
+    );
+    if (
+      !response.share ||
+      typeof response.share.token !== 'string' ||
+      typeof response.share.path !== 'string'
+    ) {
+      throw new Error('分享响应缺少链接字段。');
+    }
+    return response.share;
+  },
+
+  async revokeReportShare(
+    reportId: string,
+    token: string | null,
+  ): Promise<void> {
+    const response = await apiClient.delete(
+      endpoints.INTELLIGENCE.REPORT_SHARE(reportId),
+      token,
+    );
+    if (!response || typeof response !== 'object' || response.ok !== true) {
+      throw new Error('撤销分享链接失败。');
+    }
+  },
+
+  async getSharedReport(token: string): Promise<SharedReport> {
+    const response = await readJson<SharedReportResponse>(
+      await apiClient.get(endpoints.INTELLIGENCE.PUBLIC_REPORT(token), null),
+    );
+    return normalizeSharedReport(response.report);
   },
 
   async downloadReport({

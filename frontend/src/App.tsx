@@ -21,6 +21,7 @@ import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
 import { EventStreamProvider } from './events/EventStreamProvider';
 import RepositorySetup from './intelligence/RepositorySetup';
+import SharedReportView from './intelligence/SharedReportView';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
@@ -118,7 +119,8 @@ export default function App() {
   // embedded / shared externally and shouldn't carry product chrome.
   const isPublicShareRoute =
     location.pathname.startsWith('/share/') ||
-    location.pathname.startsWith('/shared/');
+    location.pathname.startsWith('/shared/') ||
+    location.pathname.startsWith('/reports/shared/');
   if (!componentMounted) {
     return <div />;
   }
@@ -171,6 +173,7 @@ export default function App() {
             }
           />
         </Route>
+        <Route path="/reports/shared/:token" element={<SharedReportView />} />
         <Route path="/share/:identifier" element={<SharedConversation />} />
         <Route path="/shared/agent/:agentId" element={<SharedAgentGate />} />
         <Route path="/*" element={<PageNotFound />} />
