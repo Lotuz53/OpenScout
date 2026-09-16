@@ -227,13 +227,10 @@ def _parse_report_payload() -> tuple[list[str], list[QueryResult | ComparisonRes
 
 
 def build_query_service() -> QueryService:
-    """Build the default hybrid-only query service.
+    """Build the production OpenScout query service."""
+    from docsgpt.intelligence.runtime import build_production_query_service
 
-    The service accepts concrete retriever and generator implementations so
-    application wiring can supply the configured HybridRetriever. The default
-    instance remains safe when no intelligence index has been configured yet.
-    """
-    return QueryService()
+    return build_production_query_service()
 
 
 def build_report_service(repository: Any, user_id: str) -> ReportService:

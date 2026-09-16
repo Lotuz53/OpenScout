@@ -5,6 +5,7 @@ import pytest
 from docsgpt.intelligence.schemas import (
     Coverage,
     IntelligenceRecord,
+    QueryFilters,
     SourceType,
     SyncFailure,
     SyncSummary,
@@ -52,6 +53,48 @@ def test_upsert_record_skips_unchanged_content(pg_conn, project, intelligence_re
     assert first.changed is True
     assert second.changed is False
     assert second.record_id == first.record_id
+
+
+def test_retrieval_hydration_and_coverage_are_owner_filter_scoped(
+    pg_conn,
+    project,
+    intelligence_record,
+) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    outcome = repo.upsert_record(project_id, intelligence_record)
+    filters = QueryFilters(
+        repositories=["langgenius/dify"],
+        source_types=[SourceType.ISSUE],
+        date_from=date(2026, 1, 1),
+        date_to=date(2026, 1, 3),
+    )
+
+    rows = repo.get_records_for_retrieval(
+        "owner",
+        [project_id],
+        filters,
+        [outcome.record_id],
+    )
+    assert rows[0]["id"] == outcome.record_id
+    assert rows[0]["body"] == intelligence_record.body
+
+    assert repo.get_records_for_retrieval(
+        "other",
+        [project_id],
+        filters,
+        [outcome.record_id],
+    ) == []
+    assert repo.get_records_for_retrieval(
+        "owner",
+        [project_id],
+        filters.model_copy(update={"source_types": [SourceType.RELEASE]}),
+        [outcome.record_id],
+    ) == []
+
+    coverage = repo.coverage("owner", filters)
+    assert coverage["repositories"] == ["langgenius/dify"]
+    assert coverage["counts"]["issue"] == 1
 
 
 def test_missing_record_requires_two_confirmations_and_can_reappear(

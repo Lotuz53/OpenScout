@@ -321,6 +321,25 @@ class QueryService:
             logger.exception("filter inference failed; using explicit filters only")
             return QueryFilters()
 
+    def _bind_user(self, user_id: str) -> None:
+        """Bind the authenticated owner to runtime-owned dependencies.
+
+        Production adapters are constructed before a request is executed so
+        the route remains a thin application boundary. They receive the
+        owner here, immediately before retrieval, while injected test doubles
+        remain unaffected because optional methods are resolved statically.
+        """
+        for dependency in (
+            self.retriever,
+            self.generator,
+            self.coverage,
+            self.analytics,
+            self.graph_retriever,
+        ):
+            binder = _optional_method(dependency, "set_user_id")
+            if callable(binder):
+                binder(user_id)
+
     def _retrieve(
         self,
         request: QueryRequest,
@@ -504,6 +523,7 @@ class QueryService:
     def query(self, request: QueryRequest, user_id: str) -> QueryResult:
         """Retrieve evidence, generate claims, and return a traced result."""
         started = time.perf_counter()
+        self._bind_user(user_id)
         explicit_filters = request.filters
         route = self.router.route(request) if self.router is not None else None
         route_filters = route.filters if route is not None else QueryFilters()

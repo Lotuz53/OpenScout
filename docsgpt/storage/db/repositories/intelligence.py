@@ -515,6 +515,72 @@ class IntelligenceRepository:
             for row in result.fetchall()
         ]
 
+    def get_records_for_retrieval(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        filters: QueryFilters,
+        record_ids: Sequence[str],
+    ) -> list[dict[str, Any]]:
+        """Load active evidence records for owner-scoped vector hits.
+
+        Args:
+            user_id: Authenticated owner whose projects are in scope.
+            project_ids: Project UUIDs selected by the retrieval adapter.
+            filters: Repository, source, and date filters to apply again in SQL.
+            record_ids: Persisted record UUIDs found in vector metadata.
+
+        Returns:
+            Evidence source rows. Unknown, malformed, inactive, or unowned ids
+            are omitted instead of being exposed to the query layer.
+        """
+        normalized_ids: list[str] = []
+        for record_id in dict.fromkeys(str(value) for value in record_ids):
+            try:
+                normalized_ids.append(str(UUID(record_id)))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        if not normalized_ids:
+            return []
+
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        bound_ids = _bind_values(normalized_ids, "record_id", params).split(", ")
+        where.append(
+            "r.id IN ("
+            + ", ".join(f"CAST({parameter} AS uuid)" for parameter in bound_ids)
+            + ")"
+        )
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT r.id::text AS id,
+                       r.repository,
+                       r.source_type,
+                       r.title,
+                       r.body,
+                       r.source_url,
+                       {_OCCURRED_AT_SQL} AS occurred_at
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE {' AND '.join(where)}
+                ORDER BY r.id::text ASC
+                """
+            ),
+            params,
+        )
+        return [
+            {
+                key: value
+                for key, value in row_to_dict(row).items()
+                if key != "_id"
+            }
+            for row in result.fetchall()
+        ]
+
+    def coverage(self, user_id: str, filters: QueryFilters) -> dict[str, Any]:
+        """Return owner-scoped coverage for a factual query."""
+        return self._aggregate_coverage(user_id, [], filters)
+
     def save_topic_run(
         self,
         *,
