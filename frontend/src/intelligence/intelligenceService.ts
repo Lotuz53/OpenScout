@@ -66,6 +66,7 @@ type ProjectRequestWithToken = {
   repository: string;
   window_start: string;
   window_end: string;
+  confirm_warnings?: boolean;
   token: string | null;
 };
 

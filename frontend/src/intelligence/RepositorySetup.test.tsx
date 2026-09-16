@@ -166,6 +166,7 @@ describe('repository setup', () => {
       repository: 'o/r',
       window_start: '2025-09-14',
       window_end: '2026-09-14',
+      confirm_warnings: true,
       token: null,
     });
     expect(intelligenceMocks.syncProject).toHaveBeenCalledWith(

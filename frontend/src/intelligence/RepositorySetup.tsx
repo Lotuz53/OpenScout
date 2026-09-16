@@ -133,6 +133,7 @@ export default function RepositorySetup() {
           repository: preflight.repository,
           window_start: windowStart,
           window_end: windowEnd,
+          confirm_warnings: requiresConfirmation && confirmed,
           token,
         });
       await intelligenceService.syncProject(project.id, token);

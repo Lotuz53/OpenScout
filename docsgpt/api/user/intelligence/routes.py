@@ -92,7 +92,7 @@ def _model_json(value: Any) -> Any:
     return value
 
 
-def _parse_project_payload() -> tuple[str, date, date]:
+def _parse_project_payload() -> tuple[str, date, date, bool]:
     """Validate and normalize a project creation payload."""
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -112,7 +112,19 @@ def _parse_project_payload() -> tuple[str, date, date]:
         raise ValueError("window_start and window_end must be ISO dates") from exc
     if window_end < window_start:
         raise ValueError("window_end must not be before window_start")
-    return repository, window_start, window_end
+    confirm_warnings = payload.get("confirm_warnings", False)
+    if not isinstance(confirm_warnings, bool):
+        raise ValueError("confirm_warnings must be a boolean")
+    return repository, window_start, window_end, confirm_warnings
+
+
+def _preflight_requires_confirmation(preflight: Any) -> bool:
+    """Return whether a preflight warning requires explicit user consent."""
+    warnings = getattr(preflight, "warnings", [])
+    return bool(getattr(preflight, "archived", False)) or any(
+        isinstance(warning, str) and "上限" in warning
+        for warning in warnings
+    )
 
 
 def _split_query_values(*names: str) -> list[str]:
@@ -256,9 +268,22 @@ class IntelligenceProjects(Resource):
         if not user_id:
             return _error("unauthorized", 401)
         try:
-            repository, window_start, window_end = _parse_project_payload()
+            repository, window_start, window_end, confirm_warnings = _parse_project_payload()
         except ValueError as exc:
             return _error(str(exc), 400)
+
+        try:
+            preflight = build_preflight_service().check(repository)
+        except Exception:
+            logger.exception("Could not preflight intelligence project repository")
+            return _error("GitHub repository preflight is unavailable", 502)
+        if getattr(preflight, "error_code", None):
+            return _error(
+                getattr(preflight, "message", None) or "该仓库暂时无法接入。",
+                400,
+            )
+        if _preflight_requires_confirmation(preflight) and not confirm_warnings:
+            return _error("请先确认仓库范围警告后再创建项目", 400)
 
         try:
             with db_session() as conn:

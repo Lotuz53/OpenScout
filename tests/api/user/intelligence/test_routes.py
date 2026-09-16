@@ -344,6 +344,12 @@ def test_create_project_is_owner_scoped(client, auth_headers, monkeypatch) -> No
         "window_end": date(2026, 9, 14),
     }
     _patch_repository(monkeypatch, repository)
+    preflight_service = MagicMock()
+    preflight_service.check.return_value = RepositoryPreflight(repository="langgenius/dify")
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.build_preflight_service",
+        lambda: preflight_service,
+    )
 
     response = client.post(
         "/api/intelligence/projects",
@@ -357,12 +363,73 @@ def test_create_project_is_owner_scoped(client, auth_headers, monkeypatch) -> No
 
     assert response.status_code == 201
     assert response.json["project"]["id"] == project_id
+    preflight_service.check.assert_called_once_with("langgenius/dify")
     repository.create_project.assert_called_once_with(
         user_id="user-1",
         repository="langgenius/dify",
         window_start=date(2025, 9, 14),
         window_end=date(2026, 9, 14),
     )
+
+
+def test_create_project_rechecks_preflight_before_db(client, auth_headers, monkeypatch) -> None:
+    repository = MagicMock()
+    _patch_repository(monkeypatch, repository)
+    preflight_service = MagicMock()
+    preflight_service.check.return_value = RepositoryPreflight(
+        repository="o/r",
+        error_code="private_not_supported",
+        message="当前阶段只支持公开 GitHub 仓库。",
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.build_preflight_service",
+        lambda: preflight_service,
+    )
+
+    response = client.post(
+        "/api/intelligence/projects",
+        headers=auth_headers,
+        json={
+            "repository": "o/r",
+            "window_start": "2025-09-14",
+            "window_end": "2026-09-14",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json["message"] == "当前阶段只支持公开 GitHub 仓库。"
+    repository.create_project.assert_not_called()
+
+
+def test_create_project_requires_preflight_warning_confirmation(
+    client, auth_headers, monkeypatch
+) -> None:
+    repository = MagicMock()
+    _patch_repository(monkeypatch, repository)
+    preflight_service = MagicMock()
+    preflight_service.check.return_value = RepositoryPreflight(
+        repository="o/r",
+        archived=True,
+        warnings=["该仓库已归档，数据可能不会继续更新。"],
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.build_preflight_service",
+        lambda: preflight_service,
+    )
+
+    response = client.post(
+        "/api/intelligence/projects",
+        headers=auth_headers,
+        json={
+            "repository": "o/r",
+            "window_start": "2025-09-14",
+            "window_end": "2026-09-14",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "确认仓库范围警告" in response.json["message"]
+    repository.create_project.assert_not_called()
 
 
 def test_sync_dispatches_owner_scoped_task(client, auth_headers, monkeypatch) -> None:
