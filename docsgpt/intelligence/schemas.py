@@ -144,10 +144,11 @@ class QueryFilters(IntelligenceModel):
 
 
 class QueryRequest(IntelligenceModel):
-    """A user question and its explicit filters."""
+    """A user question, optional explicit intent, and explicit filters."""
 
     question: str = Field(min_length=1, max_length=2000)
     filters: QueryFilters = Field(default_factory=QueryFilters)
+    intent: QueryIntent | None = None
 
 
 class Evidence(IntelligenceModel):

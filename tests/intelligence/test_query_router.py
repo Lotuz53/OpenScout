@@ -115,6 +115,18 @@ def test_default_router_classifies_supported_intents(
     assert decision.confidence >= 0.65
 
 
+def test_explicit_intent_overrides_ambiguous_question_markers() -> None:
+    request = QueryRequest(
+        question="最近哪些 Issue 主题最活跃？",
+        intent=QueryIntent.AGGREGATE,
+    )
+
+    decision = QueryRouter().route(request)
+
+    assert decision.intent == QueryIntent.AGGREGATE
+    assert decision.strategy == RetrievalStrategy.SQL_PLUS_HYBRID
+
+
 def test_query_service_traces_explicit_route_decision() -> None:
     retriever = MagicMock()
     retriever.retrieve.return_value = [_evidence()]

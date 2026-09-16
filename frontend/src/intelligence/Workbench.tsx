@@ -184,7 +184,7 @@ export default function Workbench() {
     setReport(null);
     setReportStatus('idle');
     setReportError(null);
-    dispatch(queryIntelligence({ question, filters }));
+    dispatch(queryIntelligence({ question, filters, intent: questionType }));
   };
 
   const selectedProjectIds = projects

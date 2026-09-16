@@ -12,6 +12,7 @@ import type {
   IntelligenceProject,
   QueryFilterPayload,
   QueryFilters,
+  QueryIntent,
   QueryResult,
   RequestStatus,
 } from './types';
@@ -91,17 +92,18 @@ export const loadProjects = createAsyncThunk<
 
 export const queryIntelligence = createAsyncThunk<
   QueryResult,
-  { question: string; filters: QueryFilters },
+  { question: string; filters: QueryFilters; intent?: QueryIntent },
   IntelligenceThunkConfig
 >(
   'intelligence/query',
-  async ({ question, filters }, { getState, rejectWithValue }) => {
+  async ({ question, filters, intent }, { getState, rejectWithValue }) => {
     try {
       const normalizedQuestion = question.trim();
       if (!normalizedQuestion) return rejectWithValue('请输入研究问题。');
       return await intelligenceService.query({
         question: normalizedQuestion,
         filters: explicitFilterPayload(filters),
+        intent,
         token: selectToken(getState()),
       });
     } catch (error) {

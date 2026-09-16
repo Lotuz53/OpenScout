@@ -106,6 +106,7 @@ export type QueryFilterPayload = Partial<QueryFilters>;
 export interface QueryRequest {
   question: string;
   filters: QueryFilterPayload;
+  intent?: QueryIntent;
 }
 
 export interface Evidence {

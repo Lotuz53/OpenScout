@@ -20,6 +20,7 @@ from docsgpt.intelligence.schemas import (
     Coverage,
     Evidence,
     QueryFilters,
+    QueryRequest,
     QueryResult,
     QueryIntent,
     RetrievalStrategy,
@@ -175,6 +176,7 @@ def test_query_shape(client, auth_headers, mock_query_service) -> None:
         json={
             "question": "Which product added SSO?",
             "filters": {"repositories": ["langgenius/dify"]},
+            "intent": "aggregate",
         },
     )
 
@@ -187,7 +189,14 @@ def test_query_shape(client, auth_headers, mock_query_service) -> None:
         "latency_ms",
         "trace",
     }
-    mock_query_service.query.assert_called_once()
+    mock_query_service.query.assert_called_once_with(
+        QueryRequest(
+            question="Which product added SSO?",
+            filters=QueryFilters(repositories=["langgenius/dify"]),
+            intent="aggregate",
+        ),
+        "user-1",
+    )
 
 
 def test_query_rejects_invalid_request(client, auth_headers, mock_query_service) -> None:

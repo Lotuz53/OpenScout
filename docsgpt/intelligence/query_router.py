@@ -16,6 +16,13 @@ from docsgpt.intelligence.schemas import (
 
 logger = logging.getLogger(__name__)
 ROUTE_CONFIDENCE_THRESHOLD = 0.65
+ROUTE_STRATEGIES = {
+    QueryIntent.FACTUAL: RetrievalStrategy.HYBRID_RERANK,
+    QueryIntent.TEMPORAL: RetrievalStrategy.HYBRID_RERANK,
+    QueryIntent.COMPARATIVE: RetrievalStrategy.SPLIT_HYBRID,
+    QueryIntent.AGGREGATE: RetrievalStrategy.SQL_PLUS_HYBRID,
+    QueryIntent.RELATIONAL: RetrievalStrategy.GRAPHRAG,
+}
 
 
 RouteParser = Callable[[QueryRequest], RouteDecision | Mapping[str, Any]]
@@ -90,6 +97,14 @@ class QueryRouter:
                 if isinstance(raw_decision, RouteDecision)
                 else RouteDecision.model_validate(raw_decision)
             )
+            if request.intent is not None:
+                decision = decision.model_copy(
+                    update={
+                        "intent": request.intent,
+                        "strategy": ROUTE_STRATEGIES[request.intent],
+                        "confidence": 1.0,
+                    }
+                )
         except Exception:
             logger.exception("route decision validation failed; using Hybrid")
             return RouteDecision(
@@ -103,6 +118,13 @@ class QueryRouter:
     @staticmethod
     def _heuristic_decision(request: QueryRequest) -> RouteDecision:
         """Classify common question forms without a model dependency."""
+        if request.intent is not None:
+            return RouteDecision(
+                intent=request.intent,
+                strategy=ROUTE_STRATEGIES[request.intent],
+                confidence=1.0,
+            )
+
         question = request.question.casefold()
         if _contains_any(question, ("相关", "关系", "关联", "related", "relationship")):
             intent = QueryIntent.RELATIONAL
@@ -143,16 +165,9 @@ class QueryRouter:
         else:
             intent = QueryIntent.FACTUAL
 
-        strategies = {
-            QueryIntent.FACTUAL: RetrievalStrategy.HYBRID_RERANK,
-            QueryIntent.TEMPORAL: RetrievalStrategy.HYBRID_RERANK,
-            QueryIntent.COMPARATIVE: RetrievalStrategy.SPLIT_HYBRID,
-            QueryIntent.AGGREGATE: RetrievalStrategy.SQL_PLUS_HYBRID,
-            QueryIntent.RELATIONAL: RetrievalStrategy.GRAPHRAG,
-        }
         return RouteDecision(
             intent=intent,
-            strategy=strategies[intent],
+            strategy=ROUTE_STRATEGIES[intent],
             confidence=0.9,
         )
 

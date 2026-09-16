@@ -1200,6 +1200,8 @@ it('sends explicit filters with the question', async () => {
 
 > 实际验证：`src/intelligence` 测试 6/6 通过，TypeScript 与生产构建通过；本 Task 新建文件及 App、endpoints、store 的 lint 通过。全仓库 lint 仍报告本 Task 之前已有的格式错误，未为此扩大修改范围。
 
+> 后续缺陷修复（2026-09-17）：工作台的显式问题类型已纳入 `QueryRequest.intent`，并由后端路由器优先采用；原有未携带该字段的请求仍保留自然语言推断回退。工作台、路由器和 API 契约定向测试通过，并在隔离实测数据上确认“发现趋势”路由为 `aggregate` 且返回统计证据。
+
 ```bash
 git add frontend/src/intelligence frontend/src/api/endpoints.ts frontend/src/store.ts frontend/src/App.tsx frontend/src/Navigation.tsx
 git commit -m "feat(openscout): add intelligence overview and workbench"

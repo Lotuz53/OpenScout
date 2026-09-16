@@ -167,6 +167,7 @@ describe('intelligence workbench', () => {
       expect.objectContaining({
         question: '最近有哪些变化？',
         filters: { repositories: ['langgenius/dify'] },
+        intent: 'factual',
       }),
     );
 
