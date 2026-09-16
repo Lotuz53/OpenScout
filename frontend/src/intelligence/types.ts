@@ -30,6 +30,24 @@ export type ProjectStatus =
 
 export type RequestStatus = 'idle' | 'loading' | 'succeeded' | 'failed';
 
+export type RepositoryPreflightErrorCode =
+  | 'invalid_repository'
+  | 'not_found'
+  | 'private_not_supported'
+  | 'github_unavailable';
+
+export interface RepositoryPreflight {
+  repository: string;
+  default_branch: string | null;
+  archived: boolean;
+  estimated_counts: Partial<
+    Record<'issues' | 'releases' | 'documents', number>
+  >;
+  warnings: string[];
+  error_code: RepositoryPreflightErrorCode | null;
+  message: string | null;
+}
+
 export interface IntelligenceProject {
   id: string;
   user_id: string;

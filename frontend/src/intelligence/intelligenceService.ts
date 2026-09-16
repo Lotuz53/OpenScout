@@ -9,10 +9,23 @@ import type {
   QueryResult,
   ReportDocument,
   ReportInput,
+  RepositoryPreflight,
 } from './types';
 
 interface ProjectsResponse {
   projects: IntelligenceProject[];
+}
+
+interface PreflightResponse {
+  preflight: RepositoryPreflight;
+}
+
+interface ProjectResponse {
+  project: IntelligenceProject;
+}
+
+interface SyncResponse {
+  task_id: string;
 }
 
 interface OverviewResponse {
@@ -37,6 +50,12 @@ type ComparisonRequestWithToken = {
 type ReportRequestWithToken = {
   project_ids: string[];
   results: ReportInput[];
+  token: string | null;
+};
+type ProjectRequestWithToken = {
+  repository: string;
+  window_start: string;
+  window_end: string;
   token: string | null;
 };
 
@@ -153,6 +172,23 @@ function normalizeReport(value: unknown): ReportDocument {
 }
 
 const intelligenceService = {
+  async preflight(
+    repository: string,
+    token: string | null,
+  ): Promise<RepositoryPreflight> {
+    const response = await readJson<PreflightResponse>(
+      await apiClient.post(
+        endpoints.INTELLIGENCE.PREFLIGHT,
+        { repository },
+        token,
+      ),
+    );
+    if (!response.preflight) {
+      throw new Error('预检响应缺少 preflight 字段。');
+    }
+    return response.preflight;
+  },
+
   async getProjects(token: string | null): Promise<IntelligenceProject[]> {
     const response = await readJson<ProjectsResponse>(
       await apiClient.get(endpoints.INTELLIGENCE.PROJECTS, token),
@@ -166,6 +202,26 @@ const intelligenceService = {
     );
     if (!response.overview) throw new Error('概览响应缺少 overview 字段。');
     return response.overview;
+  },
+
+  async createProject({ token, ...request }: ProjectRequestWithToken) {
+    const response = await readJson<ProjectResponse>(
+      await apiClient.post(endpoints.INTELLIGENCE.PROJECTS, request, token),
+    );
+    if (!response.project) throw new Error('创建响应缺少 project 字段。');
+    return response.project;
+  },
+
+  async syncProject(projectId: string, token: string | null): Promise<string> {
+    const response = await readJson<SyncResponse>(
+      await apiClient.post(
+        endpoints.INTELLIGENCE.PROJECT_SYNC(projectId),
+        {},
+        token,
+      ),
+    );
+    if (!response.task_id) throw new Error('同步响应缺少 task_id 字段。');
+    return response.task_id;
   },
 
   async query({

@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import date, datetime, time, timezone
 from typing import Any, Iterator, Mapping, Sequence
 
-from requests import Response
+from requests import HTTPError, Response
 
 from docsgpt.parser.remote.github_loader import GitHubLoader, GitHubRateLimitError
 
 __all__ = ["GitHubClient", "GitHubRateLimitError"]
 
 
+logger = logging.getLogger(__name__)
 UTC = timezone.utc
 GITHUB_API = "https://api.github.com"
 
@@ -74,6 +77,105 @@ class GitHubClient:
     def _request(self, url: str, params: dict[str, object]) -> Response:
         """Call the shared loader request boundary with query parameters."""
         return self._loader._make_request(url, params=params)
+
+    @staticmethod
+    def _link_total(response: Response) -> int:
+        """Read a collection total from GitHub's pagination link header."""
+        link = response.headers.get("Link", "")
+        match = re.search(r"[?&]page=(\d+)[^>]*>;\s*rel=\"last\"", link)
+        if match:
+            return int(match.group(1))
+        payload = response.json()
+        return len(payload) if isinstance(payload, list) else 0
+
+    def _estimate_collection_count(
+        self,
+        url: str,
+        params: dict[str, object] | None = None,
+    ) -> tuple[int, str | None]:
+        """Estimate a GitHub collection size with one metadata-only page."""
+        try:
+            response = self._request(url, {**(params or {}), "per_page": 1})
+            return self._link_total(response), None
+        except Exception:
+            logger.warning("Could not estimate GitHub collection size for %s", url, exc_info=True)
+            return 0, "部分数量估算暂不可用"
+
+    def repository_metadata(self, repo: str) -> dict[str, Any]:
+        """Return public repository metadata and bounded count estimates.
+
+        Args:
+            repo: GitHub repository URL or ``owner/name``.
+
+        Returns:
+            Repository metadata with ``status``, privacy/archive flags, the
+            default branch, bounded collection estimates, and non-sensitive
+            warnings. A missing repository returns ``status=404`` instead of
+            raising so preflight can classify it for the user.
+        """
+        repo_name = self._normalize_repo(repo)
+        try:
+            response = self._request(f"{GITHUB_API}/repos/{repo_name}", {})
+        except HTTPError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status is not None:
+                return {
+                    "status": int(status),
+                    "private": False,
+                    "archived": False,
+                    "default_branch": None,
+                    "estimated_counts": {},
+                    "warnings": [],
+                }
+            raise
+
+        payload = response.json()
+        if not isinstance(payload, Mapping):
+            raise ValueError("GitHub repository metadata must be a JSON object")
+
+        is_private = bool(payload.get("private"))
+        default_branch = str(payload.get("default_branch") or "main")
+        metadata: dict[str, Any] = {
+            "status": int(response.status_code),
+            "private": is_private,
+            "archived": bool(payload.get("archived")),
+            "empty": bool(payload.get("size") == 0 and not payload.get("default_branch")),
+            "default_branch": default_branch,
+            "estimated_counts": {},
+            "warnings": [],
+        }
+        if is_private:
+            return metadata
+
+        issues, issues_warning = self._estimate_collection_count(
+            f"{GITHUB_API}/repos/{repo_name}/issues",
+            {"state": "all"},
+        )
+        releases, releases_warning = self._estimate_collection_count(
+            f"{GITHUB_API}/repos/{repo_name}/releases",
+        )
+        documents = 0
+        documents_warning: str | None = None
+        try:
+            entries, truncated = self._loader.fetch_repo_tree(repo_name, default_branch)
+            documents = len(self._loader.select_files(entries))
+            if truncated:
+                documents_warning = "文档数量估算受 GitHub 树接口上限影响"
+        except Exception:
+            logger.warning("Could not estimate documentation count for %s", repo_name, exc_info=True)
+            documents_warning = "文档数量估算暂不可用"
+
+        metadata["estimated_counts"] = {
+            "issues": issues,
+            "releases": releases,
+            "documents": documents,
+        }
+        metadata["warnings"] = [
+            warning
+            for warning in (issues_warning, releases_warning, documents_warning)
+            if warning
+        ]
+        return metadata
 
     def _iter_pages(
         self,

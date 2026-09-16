@@ -7,6 +7,7 @@ import {
   Clock3,
   MessageSquareText,
   PackageCheck,
+  Plus,
   Radar,
 } from 'lucide-react';
 import { useEffect } from 'react';
@@ -206,12 +207,24 @@ export default function IntelligenceOverview() {
               把固定产品范围内的文档、Issue 与 Release 组织成可追溯的研究起点。
             </p>
           </div>
-          <Button asChild className="w-fit rounded-full px-5">
-            <Link to="/intelligence/workbench">
-              进入研究工作台
-              <ArrowUpRight className="size-4" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              asChild
+              variant="outline"
+              className="w-fit rounded-full px-4"
+            >
+              <Link to="/intelligence/setup">
+                <Plus className="size-4" />
+                添加公开仓库
+              </Link>
+            </Button>
+            <Button asChild className="w-fit rounded-full px-5">
+              <Link to="/intelligence/workbench">
+                进入研究工作台
+                <ArrowUpRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
         </header>
 
         {capped && (

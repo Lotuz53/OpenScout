@@ -20,6 +20,7 @@ import UploadToast from './components/UploadToast';
 import Conversation from './conversation/Conversation';
 import { SharedConversation } from './conversation/SharedConversation';
 import { EventStreamProvider } from './events/EventStreamProvider';
+import RepositorySetup from './intelligence/RepositorySetup';
 import { useDarkTheme, useMediaQuery } from './hooks';
 import useDataInitializer from './hooks/useDataInitializer';
 import useTokenAuth from './hooks/useTokenAuth';
@@ -156,6 +157,7 @@ export default function App() {
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
           <Route path="/intelligence" element={<IntelligenceOverview />} />
+          <Route path="/intelligence/setup" element={<RepositorySetup />} />
           <Route
             path="/intelligence/workbench"
             element={<IntelligenceWorkbench />}

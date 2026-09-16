@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 import logging
 from datetime import date
 from typing import Any
@@ -12,6 +13,7 @@ from pydantic import ValidationError
 
 from docsgpt.intelligence.comparison import ComparisonService
 from docsgpt.intelligence.github_client import GitHubClient
+from docsgpt.intelligence.preflight import RepositoryPreflightService
 from docsgpt.intelligence.query_service import QueryService
 from docsgpt.intelligence.report_service import (
     ReportExportError,
@@ -189,6 +191,30 @@ def build_query_service() -> QueryService:
 def build_report_service(repository: Any, user_id: str) -> ReportService:
     """Build an owner-scoped report service for one request transaction."""
     return ReportService(repository=repository, user_id=user_id)
+
+
+def build_preflight_service() -> RepositoryPreflightService:
+    """Build the GitHub repository preflight service for one request."""
+    return RepositoryPreflightService(GitHubClient())
+
+
+@intelligence_ns.route("/intelligence/preflight")
+class IntelligencePreflight(Resource):
+    """Inspect a user-supplied repository before project creation."""
+
+    def post(self):
+        """Return public repository scope, estimates, and setup warnings."""
+        if not _current_user():
+            return _error("unauthorized", 401)
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or not isinstance(payload.get("repository"), str):
+            return _error("repository must be a valid GitHub repository", 400)
+        try:
+            result = build_preflight_service().check(payload["repository"])
+            return _ok({"preflight": asdict(result)})
+        except Exception:
+            logger.exception("Could not preflight GitHub repository")
+            return _error("GitHub repository preflight is unavailable", 502)
 
 
 @intelligence_ns.route("/intelligence/projects")
@@ -507,6 +533,7 @@ class IntelligenceReportDownload(Resource):
 
 
 __all__ = [
+    "IntelligencePreflight",
     "IntelligenceOverview",
     "IntelligenceReport",
     "IntelligenceReportDownload",
@@ -518,6 +545,7 @@ __all__ = [
     "IntelligenceQuery",
     "IntelligenceSyncRun",
     "IntelligenceTopics",
+    "build_preflight_service",
     "build_query_service",
     "build_report_service",
     "intelligence_ns",

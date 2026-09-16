@@ -40,7 +40,7 @@
 - 输入：`GitHubLoader.normalize_repo(repo_url: str) -> str`、阶段 A 项目仓储，以及需要认证的 `/api/intelligence` 命名空间。
 - 输出：`RepositoryPreflight(repository, default_branch, archived, estimated_counts, warnings)`、`POST /api/intelligence/preflight`，以及从配置到同步的界面流程。
 
-- [ ] **步骤 1：编写预检分类测试**
+- [x] **步骤 1：编写预检分类测试**
 
 ```python
 @pytest.mark.parametrize("status,private,expected", [
@@ -53,21 +53,21 @@ def test_preflight_classifies_repository(status, private, expected, github) -> N
     assert result.error_code == expected
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_preflight.py tests/api/user/intelligence/test_routes.py -q`
 
 预期：FAIL，提示缺少预检服务或路由。
 
-- [ ] **步骤 3：实现有边界的元数据预检**
+- [x] **步骤 3：实现有边界的元数据预检**
 
 将输入规范化为 `owner/name`；在不下载正文的情况下获取仓库元数据和数量估算；拒绝格式错误、非 GitHub 或私有仓库；对已归档、空仓库或超过上限的仓库返回警告。警告不得绕过阶段 A 的数据上限。
 
-- [ ] **步骤 4：实现配置界面和创建交接流程**
+- [x] **步骤 4：实现配置界面和创建交接流程**
 
 表单收集 URL 和时间窗口，展示规范化仓库名、Issues/Releases/文档估算数量和上限警告，然后调用现有创建与同步接口。存在错误时禁用创建；对于已归档或达到上限的仓库，必须由用户明确确认。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_preflight.py tests/api/user/intelligence/test_routes.py -q`
 

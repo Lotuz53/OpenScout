@@ -11,6 +11,7 @@ from flask_restx import Api
 
 from docsgpt.api.user.intelligence.routes import intelligence_ns
 from docsgpt.intelligence.comparison import ComparisonCell, ComparisonResult, ComparisonRow
+from docsgpt.intelligence.preflight import RepositoryPreflight
 from docsgpt.intelligence.report_service import ReportService
 from docsgpt.intelligence.schemas import (
     Claim,
@@ -132,6 +133,39 @@ def test_query_requires_auth(client) -> None:
     response = client.post("/api/intelligence/query", json={"question": "x"})
 
     assert response.status_code == 401
+
+
+def test_preflight_requires_auth(client) -> None:
+    response = client.post(
+        "/api/intelligence/preflight",
+        json={"repository": "https://github.com/o/r"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_preflight_returns_setup_contract(client, auth_headers, monkeypatch) -> None:
+    service = MagicMock()
+    service.check.return_value = RepositoryPreflight(
+        repository="o/r",
+        default_branch="main",
+        estimated_counts={"issues": 10, "releases": 2, "documents": 5},
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.build_preflight_service",
+        lambda: service,
+    )
+
+    response = client.post(
+        "/api/intelligence/preflight",
+        headers=auth_headers,
+        json={"repository": "https://github.com/o/r.git"},
+    )
+
+    assert response.status_code == 200
+    assert response.json["preflight"]["repository"] == "o/r"
+    assert response.json["preflight"]["estimated_counts"]["issues"] == 10
+    service.check.assert_called_once_with("https://github.com/o/r.git")
 
 
 def test_query_shape(client, auth_headers, mock_query_service) -> None:

@@ -157,6 +157,7 @@ const endpoints = {
       `/api/devices/pairings/${deviceCode}`,
   },
   INTELLIGENCE: {
+    PREFLIGHT: '/api/intelligence/preflight',
     PROJECTS: '/api/intelligence/projects',
     PROJECT: (id: string) =>
       `/api/intelligence/projects/${encodeURIComponent(id)}`,
