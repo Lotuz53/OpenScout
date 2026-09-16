@@ -612,7 +612,10 @@ class QueryService:
                     False,
                 )
             )
-            answer = f"{_format_aggregate_result(aggregate_result)}\n{answer}"
+            aggregate_answer = _format_aggregate_result(aggregate_result)
+            if answer != NO_EVIDENCE_ANSWER:
+                aggregate_answer = f"{aggregate_answer}\n{answer}"
+            answer = aggregate_answer
         return QueryResult(
             answer=answer,
             claims=claims,

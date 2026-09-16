@@ -11,7 +11,7 @@ from docsgpt.intelligence.analytics import (
     AnalyticsService,
 )
 from docsgpt.intelligence.query_router import QueryRouter, RouteDecision
-from docsgpt.intelligence.query_service import QueryService
+from docsgpt.intelligence.query_service import NO_EVIDENCE_ANSWER, QueryService
 from docsgpt.intelligence.schemas import (
     Coverage,
     Evidence,
@@ -253,3 +253,35 @@ def test_query_service_keeps_sql_value_and_representative_evidence() -> None:
     assert result.claims[0].evidence_ids == [evidence.id]
     analytics.run.assert_called_once()
     retriever.retrieve.assert_not_called()
+
+
+def test_query_service_does_not_append_no_evidence_to_sql_answer() -> None:
+    evidence = _evidence()
+    retriever = MagicMock()
+    generator = MagicMock()
+    generator.generate.return_value = {
+        "answer": NO_EVIDENCE_ANSWER,
+        "claims": [],
+    }
+    analytics = MagicMock()
+    analytics.run.return_value = AggregateResult(
+        rows=[{"dimension": "langgenius/dify", "value": 3}],
+        coverage=_coverage(),
+        evidence=[evidence],
+    )
+    router = QueryRouter(
+        parser=lambda request: RouteDecision(
+            intent=QueryIntent.AGGREGATE,
+            strategy=RetrievalStrategy.SQL_PLUS_HYBRID,
+            confidence=0.9,
+        )
+    )
+
+    result = QueryService(
+        retriever=retriever,
+        generator=generator,
+        router=router,
+        analytics=analytics,
+    ).query(QueryRequest(question="How many issues mention export?"), "owner")
+
+    assert result.answer == "SQL统计结果（count，按repository）：langgenius/dify=3"
