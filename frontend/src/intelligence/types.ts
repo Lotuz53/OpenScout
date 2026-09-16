@@ -89,6 +89,7 @@ export interface IntelligenceProject {
   window_end: string;
   status: ProjectStatus;
   last_synced_at: string | null;
+  external_updated_at: string | null;
   /** Optional fields supplied by an enriched overview response. */
   latest_version?: string | null;
 }

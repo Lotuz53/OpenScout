@@ -33,7 +33,13 @@ def release_payload(body: str = "Initial release.") -> dict[str, object]:
 class MemoryRepository:
     """Small stateful repository double for sync lifecycle assertions."""
 
-    def __init__(self, record=None, *, last_synced_at=PREVIOUS_SYNC) -> None:
+    def __init__(
+        self,
+        record=None,
+        *,
+        last_synced_at=PREVIOUS_SYNC,
+        external_updated_at=None,
+    ) -> None:
         self.project = {
             "id": PROJECT_ID,
             "user_id": "u1",
@@ -41,6 +47,7 @@ class MemoryRepository:
             "window_start": date(2025, 9, 14),
             "window_end": date(2026, 9, 14),
             "last_synced_at": last_synced_at,
+            "external_updated_at": external_updated_at,
         }
         self.records = {record["id"]: dict(record)} if record else {}
         self._run_number = 0
@@ -119,10 +126,19 @@ class MemoryRepository:
                 deactivated.append(row["id"])
         return deactivated
 
-    def set_project_status(self, project_id, user_id, status, last_synced_at=None):
+    def set_project_status(
+        self,
+        project_id,
+        user_id,
+        status,
+        last_synced_at=None,
+        external_updated_at=None,
+    ):
         self.project["status"] = status
         if last_synced_at is not None:
             self.project["last_synced_at"] = last_synced_at
+        if external_updated_at is not None:
+            self.project["external_updated_at"] = external_updated_at
 
     def get_record(self, record_id: str):
         return self.records[record_id]
@@ -192,6 +208,8 @@ def test_changed_record_is_reindexed() -> None:
     assert summary.changed_records == 1
     indexer.replace_records.assert_called_once()
     assert github.release_since == [PREVIOUS_SYNC]
+    assert summary.cursor is not None
+    assert repository.project["external_updated_at"] == summary.cursor.external_updated_at
 
 
 def test_unchanged_record_is_not_reindexed() -> None:
@@ -223,7 +241,11 @@ def test_record_deactivates_only_after_two_complete_misses() -> None:
 
 
 def test_partial_sync_does_not_confirm_missing_records() -> None:
-    repository = MemoryRepository(stored_release())
+    previous_external_update = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    repository = MemoryRepository(
+        stored_release(),
+        external_updated_at=previous_external_update,
+    )
     github = FakeGitHub([], issue_error=GitHubRateLimitError(RESET_AT))
     indexer = MagicMock()
 
@@ -232,4 +254,5 @@ def test_partial_sync_does_not_confirm_missing_records() -> None:
     assert summary.status == "partial"
     assert repository.get_record("record-1")["missing_confirmations"] == 0
     assert repository.get_record("record-1")["active"] is True
+    assert repository.project["external_updated_at"] == previous_external_update
     indexer.delete_records.assert_not_called()

@@ -329,6 +329,7 @@ class SyncService:
             user_id,
             "ready" if status == "complete" else status,
             last_synced_at=last_synced_at,
+            external_updated_at=cursor.external_updated_at if cursor else None,
         )
         return summary
 
@@ -672,15 +673,25 @@ class SyncService:
         status: str,
         *,
         last_synced_at: datetime | None = None,
+        external_updated_at: datetime | None = None,
     ) -> None:
         """Persist the project lifecycle state when supported."""
         with self._repository_context() as repository:
             updater = getattr(repository, "set_project_status", None)
             if callable(updater):
                 try:
-                    updater(project_id, user_id, status, last_synced_at)
+                    updater(
+                        project_id,
+                        user_id,
+                        status,
+                        last_synced_at,
+                        external_updated_at,
+                    )
                 except TypeError:
-                    updater(project_id, status, last_synced_at)
+                    try:
+                        updater(project_id, user_id, status, last_synced_at)
+                    except TypeError:
+                        updater(project_id, status, last_synced_at)
                 return
 
             if isinstance(repository, IntelligenceRepository):
@@ -689,7 +700,11 @@ class SyncService:
                         """
                         UPDATE intelligence_projects
                         SET status = :status,
-                            last_synced_at = COALESCE(:last_synced_at, last_synced_at)
+                            last_synced_at = COALESCE(:last_synced_at, last_synced_at),
+                            external_updated_at = COALESCE(
+                                :external_updated_at,
+                                external_updated_at
+                            )
                         WHERE id = CAST(:project_id AS uuid)
                           AND user_id = :user_id
                         """
@@ -699,6 +714,7 @@ class SyncService:
                         "user_id": user_id,
                         "status": status,
                         "last_synced_at": last_synced_at,
+                        "external_updated_at": external_updated_at,
                     },
                 )
 

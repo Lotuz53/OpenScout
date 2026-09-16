@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -129,6 +129,47 @@ class IntelligenceRepository:
         )
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
+
+    def set_project_status(
+        self,
+        project_id: str,
+        user_id: str,
+        status: str,
+        last_synced_at: datetime | None = None,
+        external_updated_at: datetime | None = None,
+    ) -> None:
+        """Update an owner-scoped project status and successful sync cursor.
+
+        Args:
+            project_id: UUID of the intelligence project.
+            user_id: Authenticated project owner.
+            status: Lifecycle status to persist.
+            last_synced_at: Local timestamp for the latest successful sync.
+            external_updated_at: Latest external object timestamp observed by
+                the latest successful sync.
+        """
+        self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_projects
+                SET status = :status,
+                    last_synced_at = COALESCE(:last_synced_at, last_synced_at),
+                    external_updated_at = COALESCE(
+                        :external_updated_at,
+                        external_updated_at
+                    )
+                WHERE id = CAST(:project_id AS uuid)
+                  AND user_id = :user_id
+                """
+            ),
+            {
+                "project_id": project_id,
+                "user_id": user_id,
+                "status": status,
+                "last_synced_at": last_synced_at,
+                "external_updated_at": external_updated_at,
+            },
+        )
 
     def find_project(self, user_id: str, repository: str) -> dict[str, Any] | None:
         """Return an owner's project for a repository, if it already exists."""

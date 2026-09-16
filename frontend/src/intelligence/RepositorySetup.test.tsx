@@ -41,6 +41,7 @@ const project: IntelligenceProject = {
   window_end: '2026-09-14',
   status: 'draft',
   last_synced_at: null,
+  external_updated_at: null,
 };
 
 function createTestStore() {

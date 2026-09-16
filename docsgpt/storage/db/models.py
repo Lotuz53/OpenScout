@@ -1094,6 +1094,7 @@ intelligence_projects_table = Table(
     Column("window_end", Date, nullable=False),
     Column("status", Text, nullable=False, server_default="draft"),
     Column("last_synced_at", DateTime(timezone=True)),
+    Column("external_updated_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     Column("updated_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
     ForeignKeyConstraint(

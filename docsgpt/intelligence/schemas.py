@@ -71,6 +71,7 @@ class IntelligenceProject(IntelligenceModel):
     window_end: date
     status: Literal["draft", "syncing", "ready", "partial", "failed"]
     last_synced_at: datetime | None = None
+    external_updated_at: datetime | None = None
 
 
 class IntelligenceRecord(IntelligenceModel):

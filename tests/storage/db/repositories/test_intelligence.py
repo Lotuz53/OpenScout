@@ -88,6 +88,38 @@ def test_project_lookup_is_owner_scoped(pg_conn, project) -> None:
     assert repo.get_project(project_id, "other") is None
 
 
+def test_project_status_persists_external_cursor_in_owner_scope(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    last_synced_at = datetime(2026, 9, 16, 8, tzinfo=timezone.utc)
+    external_updated_at = datetime(2026, 9, 15, 12, tzinfo=timezone.utc)
+
+    repo.set_project_status(
+        project_id,
+        "owner",
+        "ready",
+        last_synced_at,
+        external_updated_at,
+    )
+
+    persisted = repo.get_project(project_id, "owner")
+    assert persisted["status"] == "ready"
+    assert datetime.fromisoformat(persisted["last_synced_at"]) == last_synced_at
+    assert datetime.fromisoformat(persisted["external_updated_at"]) == external_updated_at
+
+    repo.set_project_status(project_id, "owner", "partial")
+    preserved = repo.get_project(project_id, "owner")
+    assert datetime.fromisoformat(preserved["external_updated_at"]) == external_updated_at
+
+    repo.set_project_status(
+        project_id,
+        "other",
+        "failed",
+        external_updated_at=last_synced_at,
+    )
+    assert repo.get_project(project_id, "owner")["status"] == "partial"
+
+
 def test_all_projects_owned_requires_every_project_in_owner_scope(pg_conn, project) -> None:
     repo = IntelligenceRepository(pg_conn)
     project_id = str(project["id"])
