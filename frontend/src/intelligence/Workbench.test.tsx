@@ -34,6 +34,12 @@ const project: IntelligenceProject = {
   last_synced_at: null,
 };
 
+const additionalProject: IntelligenceProject = {
+  ...project,
+  id: 'project-2',
+  repository: 'acme/scout',
+};
+
 const queryResult: QueryResult = {
   answer: '当前收录数据无法支持该结论。',
   claims: [],
@@ -82,7 +88,7 @@ function createTestStore() {
     preloadedState: {
       intelligence: {
         ...initialState,
-        projects: [project],
+        projects: [project, additionalProject],
         projectsStatus: 'succeeded' as const,
       },
     },
@@ -112,6 +118,15 @@ afterEach(() => {
 });
 
 describe('intelligence workbench', () => {
+  it('renders repository filters from the owned project list', async () => {
+    const { container, root } = await mountWorkbench();
+
+    expect(container.querySelector('input[aria-label="Dify"]')).toBeTruthy();
+    expect(container.querySelector('input[aria-label="scout"]')).toBeTruthy();
+
+    root.unmount();
+  });
+
   it('sends explicit filters with the question', async () => {
     intelligenceMocks.query.mockResolvedValue(queryResult);
     const { container, root } = await mountWorkbench();

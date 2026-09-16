@@ -38,11 +38,17 @@ import type {
   SourceType,
 } from './types';
 
-const REPOSITORIES = [
-  { label: 'Dify', value: 'langgenius/dify' },
-  { label: 'RAGFlow', value: 'infiniflow/ragflow' },
-  { label: 'FastGPT', value: 'labring/FastGPT' },
-] as const;
+const REPOSITORY_LABELS: Record<string, string> = {
+  'langgenius/dify': 'Dify',
+  'infiniflow/ragflow': 'RAGFlow',
+  'labring/FastGPT': 'FastGPT',
+};
+
+function repositoryLabel(repository: string): string {
+  return (
+    REPOSITORY_LABELS[repository] ?? repository.split('/').pop() ?? repository
+  );
+}
 
 const SOURCE_OPTIONS: { label: string; value: SourceType }[] = [
   { label: '文档', value: 'documentation' },
@@ -309,14 +315,8 @@ export default function Workbench() {
   };
 
   const selectedRepositoryLabel = filters.repositories.length
-    ? filters.repositories
-        .map(
-          (repository) =>
-            REPOSITORIES.find((option) => option.value === repository)?.label ??
-            repository,
-        )
-        .join('、')
-    : '全部固定产品';
+    ? filters.repositories.map(repositoryLabel).join('、')
+    : '全部已接入产品';
   const analysisClaims =
     queryResult?.claims.filter((claim) => claim.kind !== 'statistic') ?? [];
   const statisticClaims =
@@ -369,41 +369,37 @@ export default function Workbench() {
                 仓库
               </legend>
               <div className="mt-3 space-y-2">
-                {REPOSITORIES.map((repository) => {
-                  const project = projects.find(
-                    (candidate) => candidate.repository === repository.value,
-                  );
+                {projects.map((project) => {
+                  const label = repositoryLabel(project.repository);
                   const checked = filters.repositories.includes(
-                    repository.value,
+                    project.repository,
                   );
                   return (
                     <label
-                      key={repository.value}
+                      key={project.id}
                       className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-2 py-2 transition-colors hover:border-black/10 hover:bg-black/[0.03] dark:hover:border-white/10 dark:hover:bg-white/[0.04]"
                     >
                       <span className="relative flex size-4 shrink-0 items-center justify-center">
                         <input
                           type="checkbox"
-                          aria-label={repository.label}
+                          aria-label={label}
                           checked={checked}
-                          onChange={() => toggleRepository(repository.value)}
+                          onChange={() => toggleRepository(project.repository)}
                           className="peer size-4 cursor-pointer appearance-none rounded border border-black/25 bg-transparent checked:border-emerald-600 checked:bg-emerald-600 dark:border-white/30"
                         />
                         <Check className="pointer-events-none absolute hidden size-3 text-white peer-checked:block" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="text-foreground block text-sm">
-                          {repository.label}
+                          {label}
                         </span>
                         <span className="text-muted-foreground block truncate font-mono text-[10px]">
-                          {repository.value}
+                          {project.repository}
                         </span>
                       </span>
-                      {project && (
-                        <span className="text-muted-foreground shrink-0 text-[10px]">
-                          {statusLabel(project.status)}
-                        </span>
-                      )}
+                      <span className="text-muted-foreground shrink-0 text-[10px]">
+                        {statusLabel(project.status)}
+                      </span>
                     </label>
                   );
                 })}
