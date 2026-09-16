@@ -467,7 +467,7 @@ git commit -m "feat(openscout): collect bounded GitHub community data"
 - 输入：原始 GitHub API 字典和 `SourceType`。
 - 输出：`is_supported_document(path: str) -> bool`、`normalize_document(repository: str, path: str, body: str, source_url: str, retrieved_at: datetime) -> IntelligenceRecord`、`normalize_issue(repository: str, raw: Mapping[str, Any], retrieved_at: datetime) -> IntelligenceRecord`、`normalize_comment(repository: str, issue_number: int, raw: Mapping[str, Any], retrieved_at: datetime) -> IntelligenceRecord`、`normalize_release(repository: str, raw: Mapping[str, Any], retrieved_at: datetime) -> IntelligenceRecord` 和 `content_hash(body: str, metadata: Mapping[str, Any]) -> str`。
 
-- [ ] **步骤 1：编写过滤和稳定哈希测试**
+- [x] **步骤 1：编写过滤和稳定哈希测试**
 
 ```python
 @pytest.mark.parametrize("path,expected", [
@@ -484,13 +484,13 @@ def test_issue_hash_ignores_retrieval_time(raw_issue) -> None:
     assert a.content_hash == b.content_hash
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_normalizer.py -q`
 
 预期：FAIL，提示缺少标准化函数。
 
-- [ ] **步骤 3：实现按来源区分的模板和规范化哈希**
+- [x] **步骤 3：实现按来源区分的模板和规范化哈希**
 
 ```python
 def content_hash(body: str, metadata: Mapping[str, Any]) -> str:
@@ -500,7 +500,7 @@ def content_hash(body: str, metadata: Mapping[str, Any]) -> str:
 
 只对承载内容的字段计算哈希，排除 `retrieved_at`。保留 Markdown 标题、列表和代码块。`source_url` 必须使用 GitHub HTML 地址，不得使用 API 地址。
 
-- [ ] **步骤 4：对 20 条标准化记录执行精确固定数据断言**
+- [x] **步骤 4：对 20 条标准化记录执行精确固定数据断言**
 
 增加 `test_normalized_fixture_matches_expected_json()`：读取 `github_objects.json`，标准化全部 20 条记录，并将 `model_dump(mode="json")` 与提交到仓库的预期列表进行比较。
 
@@ -508,7 +508,7 @@ def content_hash(body: str, metadata: Mapping[str, Any]) -> str:
 
 预期：固定快照包含四类来源的仓库、来源类型、日期、标签、数量、版本、URL 和哈希。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_normalizer.py -q`
 
