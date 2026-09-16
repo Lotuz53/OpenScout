@@ -61,7 +61,7 @@
     "@babel/core": "^8.0.5",
     "@babel/preset-env": "^8.0.5",
     "@babel/preset-react": "^8.0.1",
-    "@eslint/js": "^9.39.4",
+    "@eslint/js": "^10.0.1",
     "@parcel/packager-ts": "^2.16.4",
     "@parcel/transformer-typescript-types": "^2.16.4",
     "@types/dompurify": "^3.0.5",
