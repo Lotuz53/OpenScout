@@ -1039,12 +1039,13 @@ git commit -m "feat(openscout): route relational questions through GraphRAG"
 - 修改： `docsgpt/intelligence/query_service.py`
 - 新建： `tests/intelligence/test_claims.py`
 - 新建： `tests/intelligence/test_confidence.py`
+- 修改： `tests/intelligence/test_query_service.py`
 
 **接口：**
 - 输入：生成的结论、证据、覆盖范围和冲突标记。
 - 输出：`validate_claims(claims: Sequence[Claim], evidence: Sequence[Evidence], coverage: Coverage) -> ClaimValidation`、`confidence_for_claim(claim: Claim, evidence: Sequence[Evidence], coverage: Coverage, has_conflict: bool) -> Confidence`，以及重新生成一次后降级的行为。
 
-- [ ] **步骤 1：将规格规则编码为参数化测试**
+- [x] **步骤 1：将规格规则编码为参数化测试**
 
 ```python
 @pytest.mark.parametrize("case,expected", [
@@ -1059,21 +1060,21 @@ def test_confidence_rules(case, expected) -> None:
     assert confidence_for_claim(**case) == expected
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_claims.py tests/intelligence/test_confidence.py -q`
 
 预期：FAIL，提示缺少可信层模块。
 
-- [ ] **步骤 3：实现证据 id 校验和冲突保留**
+- [x] **步骤 3：实现证据 id 校验和冲突保留**
 
 拒绝响应中不存在的证据 id。事实或统计没有有效证据时只触发一次重新生成；仍无效则返回确定性统计、证据卡片和拒答文案 `当前收录数据无法支持该结论`。
 
-- [ ] **步骤 4：逐条结论计算可信度**
+- [x] **步骤 4：逐条结论计算可信度**
 
 根据来源类型、不同 Issue 作者数量、覆盖完整性、冲突、数据时效和结论类型计算。不得接受 LLM 提供的可信度数字。保留冲突结论并同时展示双方来源日期。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_claims.py tests/intelligence/test_confidence.py tests/intelligence/test_query_service.py -q`
 

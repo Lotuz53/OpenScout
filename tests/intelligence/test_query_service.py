@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from docsgpt.intelligence.query_service import QueryService
+from docsgpt.intelligence.query_service import NO_EVIDENCE_ANSWER, QueryService
 from docsgpt.intelligence.query_router import QueryRouter
 from docsgpt.intelligence.schemas import (
     Claim,
@@ -80,7 +80,7 @@ def test_query_service_runs_hybrid_chain_and_returns_trace() -> None:
     assert result.latency_ms >= 0
 
 
-def test_query_service_rejects_citations_not_in_evidence() -> None:
+def test_query_service_retries_then_rejects_citations_not_in_evidence() -> None:
     retriever = MagicMock()
     retriever.retrieve.return_value = [_evidence()]
     generator = MagicMock()
@@ -101,8 +101,12 @@ def test_query_service_rejects_citations_not_in_evidence() -> None:
         coverage=_coverage,
     )
 
-    with pytest.raises(ValueError, match="unknown evidence"):
-        service.query(QueryRequest(question="What happened?"), "user-1")
+    result = service.query(QueryRequest(question="What happened?"), "user-1")
+
+    assert generator.generate.call_count == 2
+    assert result.answer == NO_EVIDENCE_ANSWER
+    assert result.claims == []
+    assert result.evidence == [_evidence()]
 
 
 def test_graph_failure_falls_back_and_traces_reason() -> None:

@@ -8,7 +8,11 @@ from collections.abc import Callable, Mapping, Sequence
 from inspect import Parameter, signature
 from typing import Any
 
+from pydantic import ValidationError
+
 from docsgpt.intelligence.analytics import AggregateQuery, AggregateResult
+from docsgpt.intelligence.claims import validate_claims
+from docsgpt.intelligence.confidence import confidence_for_claim
 from docsgpt.intelligence.filters import (
     compile_metadata_filter,
     filter_provenance,
@@ -19,6 +23,7 @@ from docsgpt.intelligence.reranker import NoOpReranker, Reranker, safe_rerank
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
+    Confidence,
     Coverage,
     Evidence,
     QueryFilters,
@@ -86,31 +91,74 @@ def _coerce_evidence(items: Sequence[Evidence | Mapping[str, Any]]) -> list[Evid
     ]
 
 
-def _coerce_generated(value: Any) -> tuple[str, list[Claim]]:
+def _coerce_claim(value: Any) -> Claim:
+    """Coerce one generator claim while retaining uncited facts for validation."""
+    if isinstance(value, Claim):
+        return value
+    try:
+        return Claim.model_validate(value)
+    except ValidationError:
+        if not isinstance(value, Mapping):
+            raise
+        raw_kind = value.get("kind")
+        try:
+            kind = raw_kind if isinstance(raw_kind, ClaimKind) else ClaimKind(raw_kind)
+        except (TypeError, ValueError):
+            raise
+        evidence_ids = value.get("evidence_ids") or []
+        if kind not in {ClaimKind.FACT, ClaimKind.STATISTIC} or evidence_ids:
+            raise
+        claim_id = value.get("id")
+        text = value.get("text")
+        if not isinstance(claim_id, str) or not claim_id:
+            raise
+        if not isinstance(text, str):
+            raise
+        return Claim.model_construct(
+            id=claim_id,
+            text=text,
+            kind=kind,
+            evidence_ids=[],
+            confidence=Confidence.LOW,
+        )
+
+
+def _coerce_generated(value: Any) -> tuple[str, list[Claim], bool]:
     """Accept a small generator contract while keeping the result strongly typed."""
     answer = ""
     raw_claims: Any = []
+    has_conflict = False
     if isinstance(value, Mapping):
         answer = str(value.get("answer") or "")
         raw_claims = value.get("claims") or []
+        has_conflict = bool(value.get("has_conflict") or value.get("conflict"))
     elif isinstance(value, tuple) and len(value) == 2:
         answer = str(value[0] or "")
         raw_claims = value[1] or []
+    elif isinstance(value, tuple) and len(value) == 3:
+        answer = str(value[0] or "")
+        raw_claims = value[1] or []
+        has_conflict = bool(value[2])
     elif isinstance(value, str):
         answer = value
     elif value is not None:
         answer = str(getattr(value, "answer", "") or "")
         raw_claims = getattr(value, "claims", value)
+        has_conflict = bool(
+            getattr(value, "has_conflict", False) or getattr(value, "conflict", False)
+        )
 
+    if isinstance(raw_claims, (Claim, Mapping)):
+        raw_claims = [raw_claims]
     if isinstance(raw_claims, Claim):
         raw_claims = [raw_claims]
     claims = [
-        claim if isinstance(claim, Claim) else Claim.model_validate(claim)
+        _coerce_claim(claim)
         for claim in (raw_claims or [])
     ]
     if not answer and claims:
         answer = " ".join(claim.text for claim in claims)
-    return answer or NO_EVIDENCE_ANSWER, claims
+    return answer or NO_EVIDENCE_ANSWER, claims, has_conflict
 
 
 def _aggregate_query(
@@ -176,17 +224,41 @@ def enforce_citations(
     ``coverage`` is accepted as part of the boundary so later SQL-backed
     claims can share this validator without changing the query service API.
     """
-    del coverage
-    evidence_ids = {item.id for item in evidence}
-    for claim in claims:
-        if claim.kind in {ClaimKind.FACT, ClaimKind.STATISTIC}:
-            unknown = set(claim.evidence_ids) - evidence_ids
-            if unknown:
-                raise ValueError(
-                    "claim cites unknown evidence: "
-                    + ", ".join(sorted(unknown))
+    validation = validate_claims(claims, evidence, coverage)
+    if not validation.valid:
+        messages = [
+            f"{claim_id}: {', '.join(ids)}"
+            for claim_id, ids in validation.unknown_evidence_ids.items()
+        ]
+        if validation.missing_evidence_claim_ids:
+            messages.append(
+                "missing evidence for "
+                + ", ".join(validation.missing_evidence_claim_ids)
+            )
+        raise ValueError("invalid claim citations: " + "; ".join(messages))
+    return validation.valid_claims
+
+
+def _score_claims(
+    claims: Sequence[Claim],
+    evidence: Sequence[Evidence],
+    coverage: Coverage,
+    has_conflict: bool,
+) -> list[Claim]:
+    """Replace every model-provided confidence value with a deterministic one."""
+    return [
+        claim.model_copy(
+            update={
+                "confidence": confidence_for_claim(
+                    claim,
+                    evidence,
+                    coverage,
+                    has_conflict,
                 )
-    return list(claims)
+            }
+        )
+        for claim in claims
+    ]
 
 
 class QueryService:
@@ -391,6 +463,44 @@ class QueryService:
             result = self.coverage(filters)
         return result if isinstance(result, Coverage) else Coverage.model_validate(result)
 
+    def _generate_with_validation(
+        self,
+        request: QueryRequest,
+        evidence: Sequence[Evidence],
+        coverage: Coverage,
+    ) -> tuple[str, list[Claim]]:
+        """Generate claims, retry once on citation errors, then degrade safely."""
+        generated = self.generator.generate(request.question, evidence)
+        answer, claims, has_conflict = _coerce_generated(generated)
+        validation = validate_claims(claims, evidence, coverage)
+        if validation.valid:
+            return answer, _score_claims(
+                validation.valid_claims,
+                evidence,
+                coverage,
+                has_conflict,
+            )
+
+        logger.warning("generated claims failed citation validation; retrying once")
+        retry_generated = self.generator.generate(request.question, evidence)
+        retry_answer, retry_claims, retry_conflict = _coerce_generated(retry_generated)
+        retry_validation = validate_claims(retry_claims, evidence, coverage)
+        if retry_validation.valid:
+            return retry_answer, _score_claims(
+                retry_validation.valid_claims,
+                evidence,
+                coverage,
+                retry_conflict,
+            )
+
+        logger.warning("generated claims failed citation validation after retry")
+        return NO_EVIDENCE_ANSWER, _score_claims(
+            retry_validation.valid_claims,
+            evidence,
+            coverage,
+            retry_conflict,
+        )
+
     def query(self, request: QueryRequest, user_id: str) -> QueryResult:
         """Retrieve evidence, generate claims, and return a traced result."""
         started = time.perf_counter()
@@ -434,18 +544,17 @@ class QueryService:
                 evidence,
                 len(evidence),
             )
-        generated = self.generator.generate(request.question, evidence)
-        answer, claims = _coerce_generated(generated)
         if aggregate_result is not None:
-            answer = f"{_format_aggregate_result(aggregate_result)}\n{answer}"
             coverage = aggregate_result.coverage
         else:
             coverage = self._coverage(effective_filters, user_id)
-        claims = enforce_citations(
-            claims=claims,
-            evidence=evidence,
-            coverage=coverage,
+        answer, claims = self._generate_with_validation(
+            request,
+            evidence,
+            coverage,
         )
+        if aggregate_result is not None:
+            answer = f"{_format_aggregate_result(aggregate_result)}\n{answer}"
         return QueryResult(
             answer=answer,
             claims=claims,
@@ -481,6 +590,7 @@ __all__ = [
     "GRAPHRAG_INCOMPLETE",
     "GRAPHRAG_TIMEOUT",
     "GRAPHRAG_UNAVAILABLE",
+    "NO_EVIDENCE_ANSWER",
     "QueryService",
     "enforce_citations",
 ]
