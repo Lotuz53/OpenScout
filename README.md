@@ -1,169 +1,79 @@
-<h1 align="center">
-  DocsGPT  🦖
-</h1>
+# OpenScout AI
 
-<p align="center">
-  <strong>Private AI for agents, assistants and enterprise search</strong>
-</p>
+OpenScout AI 是一个构建在 [DocsGPT](https://github.com/arc53/DocsGPT) 之上的开源产品情报工作台：它把公开 GitHub 的文档、Issue、评论和 Release 组织成可追溯的证据，并以问题、趋势、产品对比和报告的方式呈现。DocsGPT 提供 Flask/React 应用、认证、用户数据存储、向量检索、模型接入和通用文档处理；OpenScout 是本项目新增的 GitHub 情报数据流、证据优先查询契约、受约束分析、前端工作台、比较矩阵、结构化报告和评估体系。
 
-<p align="left">
-  <strong><a href="https://www.docsgpt.cloud/">DocsGPT</a></strong> is an open-source AI platform for building intelligent agents and assistants. Features Agent Builder, deep research tools, document analysis (PDF, Office, web content, and audio), Multi-model support (choose your provider or run locally), and rich API connectivity for agents with actionable tools and integrations. Deploy anywhere with complete privacy control.
-</p>
+## 当前结论
 
-<div align="center">
-  
-  <a href="https://github.com/arc53/DocsGPT">![link to main GitHub showing Stars number](https://img.shields.io/github/stars/arc53/docsgpt?style=social)</a>
-  <a href="https://github.com/arc53/DocsGPT">![link to main GitHub showing Forks number](https://img.shields.io/github/forks/arc53/docsgpt?style=social)</a>
-  <a href="https://github.com/arc53/DocsGPT/blob/main/LICENSE">![link to license file](https://img.shields.io/github/license/arc53/docsgpt)</a>
-  <a href="https://www.bestpractices.dev/projects/9907"><img src="https://www.bestpractices.dev/projects/9907/badge"></a>
-  <a href="https://discord.gg/vN7YFfdMpj">![link to discord](https://img.shields.io/discord/1070046503302877216)</a>
-  <a href="https://x.com/docsgptai">![X (formerly Twitter) URL](https://img.shields.io/twitter/follow/docsgptai)</a>
+Stage A 已完成可重复演示和封存测量，但质量门槛没有全部通过：引用精确率为 **0.567**，低于 **0.900** 要求。因此本版本只作为实验性作品集证据，不宣称“Stage A 已达标”。事实题和复杂问题门槛通过，但不能覆盖引用门槛失败这一结论。
 
-<a href="https://docs.docsgpt.cloud/quickstart">⚡️ Quickstart</a> • <a href="https://app.docsgpt.cloud/">☁️ Cloud Version</a> • <a href="https://discord.gg/vN7YFfdMpj">💬 Discord</a>
-<br>
-<a href="https://docs.docsgpt.cloud/">📖 Documentation</a> • <a href="https://github.com/arc53/DocsGPT/blob/main/CONTRIBUTING.md">👫 Contribute</a> • <a href="https://blog.docsgpt.cloud/">🗞 Blog</a>
-<br>
+| 指标 | holdout 实测 | 门槛 | 结果 |
+| --- | ---: | ---: | --- |
+| 事实题正确率 | 0.900 | ≥ 0.800 | PASS |
+| 引用精确率 | 0.567 | ≥ 0.900 | FAIL |
+| 比较/综合问题成功率 | 0.890 | ≥ 0.750 | PASS |
+| 非 GraphRAG 平均延迟 | 0ms | ≤ 10,000ms | PASS* |
+| 五个演示场景无未引用事实 | 5/5 | 5/5 | PASS |
 
-</div>
+\* 延迟来自提交的离线 lexical proxy，不是生产延迟。平均 token 成本为 input **9.350**、output **40.200**、合计 **49.550**；当前没有货币价格模型。完整数值见 [`evaluation/results/stage-a-summary.md`](evaluation/results/stage-a-summary.md)。
 
+## 五分钟演示
 
-<div align="center">
-  <br>
-<img src="https://d3dg1063dc54p9.cloudfront.net/videos/demo-26.gif" alt="video-example-of-docs-gpt" width="800" height="480">
-</div>
-<h3 align="left">
-  <strong>Key Features:</strong>
-</h3>
-<ul align="left">
-    <li><strong>🗂️ Wide Format Support:</strong> Reads PDF, DOCX, CSV, XLSX, EPUB, MD, RST, HTML, MDX, JSON, PPTX, images, and audio files such as MP3, WAV, M4A, OGG, and WebM.</li>
-    <li><strong>🎙️ Speech Workflows:</strong> Record voice input into chat, transcribe audio on the backend, and ingest meeting recordings or voice notes as searchable knowledge.</li>
-    <li><strong>🌐 Web & Data Integration:</strong> Ingests from URLs, sitemaps, Reddit, GitHub and web crawlers.</li>
-    <li><strong>✅ Reliable Answers:</strong> Get accurate, hallucination-free responses with source citations viewable in a clean UI.</li>
-    <li><strong>🔑 Streamlined API Keys:</strong>  Generate keys linked to your settings, documents, and models, simplifying chatbot and integration setup.</li>
-    <li><strong>🔗 Actionable Tooling:</strong> Connect to APIs, tools, and other services to enable LLM actions.</li>
-    <li><strong>🧩 Pre-built Integrations:</strong> Use readily available HTML/React chat widgets, search tools, Discord/Telegram bots, and more.</li>
-    <li><strong>🔌 Flexible Deployment:</strong> Works with major LLMs (OpenAI, Google, Anthropic) and local models (Ollama, llama_cpp).</li>
-    <li><strong>🏢 Secure & Scalable:</strong> Run privately and securely with Kubernetes support, designed for enterprise-grade reliability.</li>
-</ul>
-
-## Roadmap
-- [x] Agent Workflow Builder with conditional nodes ( February 2026 )
-- [x] Research mode ( March 2026 )
-- [x] SharePoint & Confluence connectors ( March – April 2026 )
-- [x] Postgres migration for user data ( April 2026 )
-- [x] OpenTelemetry observability ( April 2026 )
-- [x] Bring Your Own Model (BYOM) ( April 2026 )
-- [x] Agent scheduling (RedBeat-backed) ( April 2026 )
-- [x] Notifications & conversation search ( May 2026 )
-- [x] Analytics & logs revamp with per-agent attribution ( June 2026 )
-- [x] OIDC / SSO login with SCIM provisioning & groups ( June 2026 )
-- [x] Admin dashboard & role-based access control (RBAC) ( June 2026 )
-- [x] Agent import / export ( June 2026 )
-- [x] Teams with team-scoped sharing & roles ( June 2026 )
-
-You can find our full roadmap [here](https://github.com/orgs/arc53/projects/2). Please don't hesitate to contribute or create issues, it helps us improve DocsGPT!
-
-### Production Support / Help for Companies:
-
-We're eager to provide personalized assistance when deploying your DocsGPT to a live environment.
-
-[Get a Demo :wave:](https://www.docsgpt.cloud/contact)⁠
-
-[Send Email :email:](mailto:support@docsgpt.cloud?subject=DocsGPT%20support%2Fsolutions)
-
-## Join the Lighthouse Program 🌟
-
-Calling all developers and GenAI innovators! The **DocsGPT Lighthouse Program** connects technical leaders actively deploying or extending DocsGPT in real-world scenarios. Collaborate directly with our team to shape the roadmap, access priority support, and build enterprise-ready solutions with exclusive community insights.
-
-[Learn More & Apply →](https://docs.google.com/forms/d/1KAADiJinUJ8EMQyfTXUIGyFbqINNClNR3jBNWq7DgTE)
-
-## QuickStart
-
-> [!Note]
-> Make sure you have [Docker](https://docs.docker.com/engine/install/) installed
-
-A more detailed [Quickstart](https://docs.docsgpt.cloud/quickstart) is available in our documentation
-
-1. **Clone the repository:**
-
-   ```bash
-   git clone https://github.com/arc53/DocsGPT.git
-   cd DocsGPT
-   ```
-
-**For macOS and Linux:**
-
-2. **Run the setup script:**
-
-   ```bash
-   ./setup.sh
-   ```
-
-**For Windows:**
-
-2. **Run the PowerShell setup script:**
-
-   ```powershell
-   PowerShell -ExecutionPolicy Bypass -File .\setup.ps1
-   ```
-
-Either script will guide you through setting up DocsGPT. Five options are available: using the public API, running locally, connecting to a local inference engine, using a cloud API provider, or building the docker image locally. The scripts will automatically configure your `.env` file and handle necessary downloads and installations based on your chosen option.
-
-**Navigate to http://localhost:5173/**
-
-To stop DocsGPT, open a terminal in the `DocsGPT` directory and run:
+离线验收使用固定快照，不访问 GitHub 或真实模型：
 
 ```bash
-docker compose -f deployment/docker-compose.yaml down
+uv sync --group dev
+KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest \
+  tests/integration/test_openscout_stage_a.py -q
 ```
 
-(or use the specific `docker compose down` command shown after running the setup script).
+五个场景清单在 [`evaluation/demo/questions.json`](evaluation/demo/questions.json)：发现趋势、查看代表性 Issues、分析 Release 关系、对比三个产品、生成报告。若运行完整 UI，打开 `/intelligence` 后按相同顺序操作：查看概览，进入工作台选择三个仓库，运行推荐问题，展开每张 Claim 的 Evidence，查看比较矩阵，最后在报告视图下载 Markdown 或 PDF。UI 的真实同步需要按项目本地开发环境配置 Postgres、Redis 和 GitHub 凭据；集成测试则始终使用提交的固定 fixture。
 
-> [!Note]
-> For development environment setup instructions, please refer to the [Development Environment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
+## OpenScout 原创工作
 
-## Contributing
+- 固定 GitHub 快照、边界受限同步和文档/Issue/评论/Release 的统一记录模型；
+- 证据 ID、来源 URL、引用校验、覆盖范围和检索追踪组成的强类型查询结果；
+- 显式仓库/来源/日期过滤、确定性统计、问题路由、可选重排和 GraphRAG 回退；
+- 主题趋势、三产品证据对比、“尚未确认”单元格以及不重新查询的结构化报告导出；
+- 80 条人工审核题目（60 条 dev、20 条 holdout）、冻结快照、三组检索实验和回归门槛。
 
-Please refer to the [CONTRIBUTING.md](CONTRIBUTING.md) file for information about how to get involved. We welcome issues, questions, and pull requests.
+实现导览见 [`docs/openscout/architecture.md`](docs/openscout/architecture.md)，限制与 PR 截图/短视频清单见 [`docs/openscout/limitations.md`](docs/openscout/limitations.md)，关键决策见 [`docs/openscout/decision-log.md`](docs/openscout/decision-log.md)。
 
-## Architecture
+## 三组实验
 
-![Architecture chart](https://github.com/user-attachments/assets/fc6a7841-ddfc-45e6-b5a0-d05fe648cbe2)
+以下数值均来自 60 条开发题上的提交 fixture；它们用于比较，不是线上质量证明。
 
-## Project Structure
+| 实验 | Recall@5 | nDCG@10 | answer | citation | faithfulness | 结论 |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| Vector → Hybrid | 0.908 → 0.900 | 0.891 → 0.905 | 0.826 → 0.828 | 0.589 → 0.606 | 0.495 → 0.514 | Hybrid 小幅改善答案/引用 |
+| Hybrid → Hybrid+Rerank | 0.900 → 0.900 | 0.905 → 0.905 | 0.828 → 0.828 | 0.606 → 0.606 | 0.514 → 0.514 | 当前 fixture 未测出增益 |
+| Unified Hybrid → Routed | 0.900 → 0.908 | 0.905 → 0.891 | 0.828 → 0.826 | 0.606 → 0.589 | 0.514 → 0.495 | 路由未显示收益，保持实验 |
 
-- **docsgpt** - Backend Flask application (the `docsgpt` Python package).
+第一组差异表在 [`evaluation/results/vector-vs-hybrid.dev.md`](evaluation/results/vector-vs-hybrid.dev.md)，逐题输入在 [`evaluation/results/vector.dev.jsonl`](evaluation/results/vector.dev.jsonl)、[`evaluation/results/hybrid.dev.jsonl`](evaluation/results/hybrid.dev.jsonl)、[`evaluation/results/hybrid-rerank.dev.jsonl`](evaluation/results/hybrid-rerank.dev.jsonl) 和 [`evaluation/results/routed.dev.jsonl`](evaluation/results/routed.dev.jsonl)。
 
-- **Extensions** - Integrations and widgets (e.g., Chatwoot, React widget).
+## 失败案例与抽样偏差
 
-- **Frontend** - Web UI built with [Vite](https://vitejs.dev/) and [React](https://react.dev/).
+引用门槛失败的逐题记录集中在 `holdout-factual-01`–`05`、`holdout-comparative-01`–`05` 和 `holdout-comprehensive-01`–`05`；答案要点不完整的例子包括 `holdout-temporal-02`、`holdout-temporal-04`、`holdout-comparative-02` 和 `holdout-comprehensive-03`。请在 [`evaluation/results/routed.holdout.jsonl`](evaluation/results/routed.holdout.jsonl) 中复核原始 evidence/citation 字段。失败结果保留在仓库中，未通过编辑封存问题来提高分数。
 
-- **Scripts** - Miscellaneous utility scripts.
+GitHub Issue 和评论只代表公开社区中的可见活动，受仓库规模、贡献者活跃度、语言、Issue 模板和项目维护习惯影响。Stage A 只抽取三个指定仓库，每仓库最多 1,000 条 Issue、每条最多 20 条评论，所以这些数据不能证明市场需求、商业优先级或完整竞品格局。
 
-## Code Of Conduct
+## 可重复命令
 
-We as members, contributors, and leaders, pledge to make participation in our community a harassment-free experience for everyone, regardless of age, body size, visible or invisible disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation. Please refer to the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) file for more information about contributing.
+```bash
+KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python evaluation/run_eval.py \
+  --config evaluation/configs/routed.yaml --split holdout --freeze
+.venv/bin/python evaluation/summarize.py \
+  --release-gates --output evaluation/results/stage-a-summary.md
+.venv/bin/python evaluation/check_regression.py \
+  --baseline evaluation/results/baseline.json \
+  --candidate evaluation/results/stage-a.json --max-drop 0.05
+```
 
-## Many Thanks To Our Contributors⚡
+holdout 输出已封存；如需改变快照或人工答案，应创建新的 snapshot，而不是覆盖 [`routed.holdout.jsonl`](evaluation/results/routed.holdout.jsonl)。回归基线与候选摘要分别是 [`baseline.json`](evaluation/results/baseline.json) 和 [`stage-a.json`](evaluation/results/stage-a.json)；本次回归检查通过，但它不等价于质量门槛全部通过。
 
-<a href="https://github.com/arc53/DocsGPT/graphs/contributors" alt="View Contributors">
-  <img src="https://contrib.rocks/image?repo=arc53/DocsGPT" alt="Contributors" />
-</a>
+## 项目来源与历史
 
-## License
+OpenScout 保留 DocsGPT 的历史提交，以便追溯底层应用、认证、存储、检索和模型接入能力的来源；OpenScout 的新增提交、文档和评估证据在此基础上独立维护。本仓库不是 DocsGPT 官方项目，也不代表 DocsGPT 的发布状态。
 
-The source code license is [MIT](https://opensource.org/license/mit/), as described in the [LICENSE](LICENSE) file.
+## 贡献
 
-## This project is supported by:
-
-<p>
-  <a href="https://www.digitalocean.com/?utm_medium=opensource&utm_source=DocsGPT">
-    <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" width="201px">
-  </a>
-</p>
-<p>
-  <a href="https://get.neon.com/docsgpt">
-    <img width="201" alt="color" src="https://github.com/user-attachments/assets/7d9813b7-0e6d-403f-b5af-68af066b326f" />
-  </a>
-  
-</p>
+请阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 了解本地开发、测试和提交要求。欢迎围绕 GitHub 情报同步、证据质量、分析工作台和评估体系提交 Issue 或 Pull Request。

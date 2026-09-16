@@ -31,11 +31,11 @@
 - Consumes: the approved copy and links in `README-openscout.md`.
 - Produces: a root README and contribution guide that identify OpenScout as the project, while linking to DocsGPT only as the upstream foundation.
 
-- [ ] Replace the root README with the approved OpenScout overview, preserving measured Stage A limitations and evaluation links.
-- [ ] Remove the duplicate `README-openscout.md` entry point.
-- [ ] Rewrite DocsGPT-specific contribution instructions as OpenScout instructions and retain only relevant upstream references.
-- [ ] Run `git diff --check` and inspect targeted OpenScout/DocsGPT references.
-- [ ] Commit the documentation changes without `AGENTS.md` and push the current development branch.
+- [x] Replace the root README with the approved OpenScout overview, preserving measured Stage A limitations and evaluation links.
+- [x] Remove the duplicate `README-openscout.md` entry point.
+- [x] Rewrite DocsGPT-specific contribution instructions as OpenScout instructions and retain only relevant upstream references.
+- [x] Run `git diff --check` and inspect targeted OpenScout/DocsGPT references.
+- [x] Commit the documentation changes without `AGENTS.md` and push the current development branch.
 
 ### Task 2: Establish a stable default branch and remote layout
 

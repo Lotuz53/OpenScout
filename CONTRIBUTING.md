@@ -1,156 +1,86 @@
-# Welcome to DocsGPT Contributing Guidelines
+# Contributing to OpenScout
 
-Thank you for choosing to contribute to DocsGPT! We are all very grateful! 
+Thank you for contributing to OpenScout AI. OpenScout is an evidence-first product intelligence workbench built on the DocsGPT application foundation. Contributions should make the OpenScout-specific ingestion, evidence retrieval, analysis, workbench, reporting, or evaluation experience more useful and more trustworthy.
 
-# We accept different types of contributions
+## Before you start
 
-📣 **Discussions** - Engage in conversations, start new topics, or help answer questions.
+- Read [`README.md`](README.md) for the current product scope and measured limitations.
+- Read [`docs/openscout/architecture.md`](docs/openscout/architecture.md) before changing OpenScout data flow or service boundaries.
+- Read [`docs/openscout/limitations.md`](docs/openscout/limitations.md) before changing evaluation or evidence behavior.
+- Keep changes focused on the issue or feature being addressed; avoid unrelated refactors.
+- Add or update tests for behavior changes.
+- For UI changes, attach a screenshot or short screen recording to the Pull Request so reviewers can verify the result.
 
-🐞 **Issues** - This is where we keep track of tasks. It could be bugs, fixes or suggestions for new features.
+## Development checks
 
-🛠️ **Pull requests** - Suggest changes to our repository, either by working on existing issues or adding new features.
+Use the existing local environment when possible. The repository's development workflow and service prerequisites are documented in [`AGENTS.md`](AGENTS.md).
 
-📚 **Wiki** - This is where our documentation resides.
+Backend checks:
 
-
-## 🐞 Issues and Pull requests
-
-- We value contributions in the form of discussions or suggestions. We recommend taking a look at existing issues and our [roadmap](https://github.com/orgs/arc53/projects/2).
-
-
-- If you're interested in contributing code, here are some important things to know:
-
-- We have a frontend built on React (Vite) and a backend in Python.
-
-> **Required for every PR:** Please attach screenshots or a short screen
-> recording that shows the working version of your changes. This makes the
-> requirement visible to reviewers and helps them quickly verify what you are
-> submitting.
-
-  
-Before creating issues, please check out how the latest version of our app looks and works by launching it via [Quickstart](https://github.com/arc53/DocsGPT#quickstart) the version on our live demo is slightly modified with login. Your issues should relate to the version you can launch via [Quickstart](https://github.com/arc53/DocsGPT#quickstart).
-
-### 👨‍💻 If you're interested in contributing code, here are some important things to know:
-
-For instructions on setting up a development environment, please refer to our [Development Deployment Guide](https://docs.docsgpt.cloud/Deploying/Development-Environment).
-
-Tech Stack Overview:
-
-- 🌐 Frontend: Built with React (Vite) ⚛️,
-
-- 🖥 Backend: Developed in Python 🐍
-
-### 🌐 Frontend Contributions (⚛️ React, Vite)
-
-*   The updated Figma design can be found [here](https://www.figma.com/file/OXLtrl1EAy885to6S69554/DocsGPT?node-id=0%3A1&t=hjWVuxRg9yi5YkJ9-1).  Please try to follow the guidelines.
-*   **Coding Style:** We follow a strict coding style enforced by ESLint and Prettier. Please ensure your code adheres to the configuration provided in our repository's `fronetend/.eslintrc.js` file.  We recommend configuring your editor with ESLint and Prettier to help with this.
-* **Component Structure:** Strive for small, reusable components.  Favor functional components and hooks over class components where possible.
-* **State Management** If you need to add stores, please use Redux.
-
-### 🖥 Backend Contributions (🐍 Python)
-
-- Review our issues and contribute to [`/docsgpt`](https://github.com/arc53/DocsGPT/tree/main/docsgpt) 
-- All new code should be covered with unit tests ([pytest](https://github.com/pytest-dev/pytest)). Please find tests under [`/tests`](https://github.com/arc53/DocsGPT/tree/main/tests) folder.
-- Before submitting your Pull Request, ensure it can be queried after ingesting some test data.
-- **Coding Style:** We adhere to the [PEP 8](https://www.python.org/dev/peps/pep-0008/) style guide for Python code. We use `ruff` as our linter and code formatter.  Please ensure your code is formatted correctly and passes `ruff` checks before submitting.
-- **Type Hinting:**  Please use type hints for all function arguments and return values. This improves code readability and helps catch errors early.  Example:
-
-    ```python
-    def my_function(name: str, count: int) -> list[str]:
-        ...
-    ```
-- **Docstrings:**  All functions and classes should have docstrings explaining their purpose, parameters, and return values.  We prefer the [Google style docstrings](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html). Example:
-
-    ```python
-    def my_function(name: str, count: int) -> list[str]:
-        """Does something with a name and a count.
-
-        Args:
-            name: The name to use.
-            count: The number of times to do it.
-
-        Returns:
-            A list of strings.
-        """
-        ...
-    ```
-  
-### Testing
-
-To run unit tests from the root of the repository, execute:
-```
-python -m pytest
+```bash
+ruff check .
+KMP_DUPLICATE_LIB_OK=TRUE python -m pytest
 ```
 
-## Workflow 📈
+Frontend checks:
 
-Here's a step-by-step guide on how to contribute to DocsGPT:
+```bash
+cd frontend && npm run lint
+cd frontend && npm run build
+```
 
-1. **Fork the Repository:**
-   - Click the "Fork" button at the top-right of this repository to create your fork.
+Documentation checks:
 
-2. **Clone the Forked Repository:**
-   - Clone the repository using:
-      ``` shell
-      git clone https://github.com/<your-github-username>/DocsGPT.git
-      ```
+```bash
+cd docs && npm run build
+```
 
-3. **Keep your Fork in Sync:**
-   - Before you make any changes, make sure that your fork is in sync to avoid merge conflicts using:
-     ```shell
-     git remote add upstream https://github.com/arc53/DocsGPT.git
-     git pull upstream main
-     ```
+For the reproducible offline Stage A check, run the command documented in the README:
 
-4. **Create and Switch to a New Branch:**
-   - Create a new branch for your contribution using:
-     ```shell
-     git checkout -b your-branch-name
-     ```
+```bash
+KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest \\
+  tests/integration/test_openscout_stage_a.py -q
+```
 
-5. **Make Changes:**
-   - Make the required changes in your branch.
+## Project boundaries
 
-6. **Add Changes to the Staging Area:**
-   - Add your changes to the staging area using:
-     ```shell
-     git add .
-     ```
+OpenScout-specific code and evidence live in the intelligence, evaluation, and `docs/openscout` areas. The `docsgpt/` application provides the underlying Flask/React runtime, authentication, storage, retrieval, model integrations, and document processing. Changes to the foundation should explain their impact on OpenScout behavior and include focused regression coverage.
 
-7. **Commit Your Changes:**
-   - Commit your changes with a descriptive commit message using:
-     ```shell
-     git commit -m "Your descriptive commit message"
-     ```
+Do not edit frozen evaluation outputs to improve a score. If the snapshot, rubric, or human-reviewed answers change, create a new version and document the reason in the decision log.
 
-8. **Push Your Changes to the Remote Repository:**
-   - Push your branch with changes to your fork on GitHub using:
-     ```shell
-     git push origin your-branch-name
-     ```
+## Git workflow
 
-9. **Submit a Pull Request (PR):**
-   - Create a Pull Request from your branch to the main repository. Make sure to include a detailed description of your changes, reference any related issues, and attach screenshots or a screen recording showing the working version.
+Clone the OpenScout repository and create a focused branch:
 
-10. **Collaborate:**
-   - Be responsive to comments and feedback on your PR.
-   - Make necessary updates as suggested.
-   - Once your PR is approved, it will be merged into the main repository.
+```bash
+git clone https://github.com/Lotuz53/OpenScout.git
+cd OpenScout
+git switch -c feature/short-description
+```
 
-11. **Testing:**
-   - Before submitting a Pull Request, ensure your code passes all unit tests.
-   - To run unit tests from the root of the repository, execute:
-     ```shell
-     python -m pytest
-     ```
+If you need to compare or synchronize with the DocsGPT foundation, add it as an upstream remote:
 
-*Note: You should run the unit test only after making the changes to the backend code.*
+```bash
+git remote add upstream https://github.com/arc53/DocsGPT.git
+git fetch upstream
+```
 
-12. **Questions and Collaboration:**
-    - Feel free to join our Discord. We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
+Stage only the files belonging to your change, commit with a descriptive message, and push your branch:
 
-Thank you for considering contributing to DocsGPT! 🙏
+```bash
+git add path/to/changed-file path/to/test-file
+git commit -m "feat(openscout): describe the change"
+git push -u origin feature/short-description
+```
 
-## Questions/collaboration
-Feel free to join our [Discord](https://discord.gg/vN7YFfdMpj). We're very friendly and welcoming to new contributors, so don't hesitate to reach out.
-# Thank you so much for considering to contributing DocsGPT!🙏
+## Pull Requests
+
+Please include:
+
+- a concise description of the user-visible or evaluation-visible change;
+- the focused validation commands you ran and their results;
+- screenshots or a short recording for UI changes;
+- any configuration, dependency, migration, or deployment implications;
+- links to relevant evaluation evidence when changing retrieval, citations, reports, or quality gates.
+
+Reviewers may ask for narrower scope, additional tests, or clearer evidence before merging. Thank you for helping make OpenScout more transparent and useful.
