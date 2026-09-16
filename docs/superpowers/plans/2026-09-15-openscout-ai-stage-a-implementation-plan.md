@@ -600,7 +600,7 @@ git commit -m "feat(openscout): synchronize GitHub data with partial success"
 - 输入：变化的 `IntelligenceRecord` 记录，以及 `VectorCreator.create_vectorstore(settings.VECTOR_STORE, source_id=project_id, embeddings_key=settings.EMBEDDINGS_KEY)`。
 - 输出：`IntelligenceIndexer.replace_records(project_id: str, records: Sequence[IntelligenceRecord]) -> IndexSummary` 和 `chunks_for_record(record) -> list[Document]`。
 
-- [ ] **步骤 1：编写切片和无变化重建索引测试**
+- [x] **步骤 1：编写切片和无变化重建索引测试**
 
 ```python
 def test_issue_stays_single_chunk_when_under_limit() -> None:
@@ -615,13 +615,13 @@ def test_unchanged_sync_adds_no_embeddings(repo, vector_store, record) -> None:
     assert indexer.replace_records(PROJECT_ID, []).embedded_chunks == 0
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_indexing.py -q`
 
 预期：FAIL，提示缺少索引器。
 
-- [ ] **步骤 3：实现感知来源类型的切片策略**
+- [x] **步骤 3：实现感知来源类型的切片策略**
 
 README/文档按 Markdown 标题边界切分；Issue/Release 在未超过 token 上限时保持为一个切片，超过后使用递归切分。每个切片的元数据字典包含：
 
@@ -637,11 +637,11 @@ README/文档按 Markdown 标题边界切分；Issue/Release 在未超过 token 
 }
 ```
 
-- [ ] **步骤 4：实现定向替换**
+- [x] **步骤 4：实现定向替换**
 
 通过稳定元数据来源 `openscout://{project_id}/{record_id}` 删除旧切片，使用 `add_texts` 增加新切片，并保存返回的切片 id 供 GraphRAG 筛选。单条增量记录变化时不得调用 `delete_index()`。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_indexing.py tests/vectorstore/test_pgvector.py -q`
 

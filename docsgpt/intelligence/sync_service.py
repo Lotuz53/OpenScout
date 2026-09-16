@@ -63,8 +63,9 @@ class SyncService:
                 no session factory is supplied. Production callers may pass
                 ``None`` and let the service create one per source transaction.
             github: Bounded GitHub API client.
-            indexer: Record indexer. ``None`` is allowed until indexing is
-                wired by the following implementation stage.
+            indexer: Record indexer. Production callers may pass ``None`` to
+                create the configured vector indexer lazily on the first
+                changed source batch.
             session_factory: Optional write transaction factory yielding a
                 SQLAlchemy connection.
             readonly_factory: Optional read-only transaction factory for the
@@ -304,10 +305,31 @@ class SyncService:
                 for record in records:
                     outcome = repository.upsert_record(project_id, record)
                     if _outcome_changed(outcome):
-                        changed_records.append(record)
+                        changed_records.append(_record_with_outcome_id(record, outcome))
 
-            if self.indexer is not None and changed_records:
-                self.indexer.replace_records(project_id, changed_records)
+            if changed_records:
+                indexer = self._get_indexer(project_id, repository)
+                if indexer is not None:
+                    indexer.replace_records(project_id, changed_records)
+
+    def _get_indexer(self, project_id: str, repository: Any) -> Any | None:
+        """Return the injected indexer or build the production one lazily."""
+        if self.indexer is not None:
+            return self.indexer
+        if self.session_factory is None or self.repository is not None:
+            return None
+
+        from docsgpt.core.settings import settings
+        from docsgpt.intelligence.indexing import IntelligenceIndexer
+        from docsgpt.vectorstore.vector_creator import VectorCreator
+
+        vector_store = VectorCreator.create_vectorstore(
+            settings.VECTOR_STORE,
+            source_id=project_id,
+            embeddings_key=settings.EMBEDDINGS_KEY,
+        )
+        self.indexer = IntelligenceIndexer(repository, vector_store)
+        return self.indexer
 
     def _get_project(self, project_id: str, user_id: str) -> Any:
         """Read an owner-scoped project through the configured repository."""
@@ -540,6 +562,20 @@ def _outcome_changed(outcome: Any) -> bool:
     return bool(getattr(outcome, "changed", True))
 
 
+def _record_with_outcome_id(
+    record: IntelligenceRecord,
+    outcome: Any,
+) -> IntelligenceRecord:
+    """Attach the persisted id to a changed record when the repository returns it."""
+    if isinstance(outcome, Mapping):
+        record_id = outcome.get("record_id") or outcome.get("id")
+    else:
+        record_id = getattr(outcome, "record_id", None) or getattr(outcome, "id", None)
+    if record_id is None:
+        return record
+    return record.model_copy(update={"id": str(record_id)})
+
+
 def _changed_records(
     records: Sequence[IntelligenceRecord],
     outcomes: Any,
@@ -550,7 +586,7 @@ def _changed_records(
     if outcomes and all(isinstance(item, IntelligenceRecord) for item in outcomes):
         return list(outcomes)
     return [
-        record
+        _record_with_outcome_id(record, outcome)
         for record, outcome in zip(records, outcomes)
         if _outcome_changed(outcome)
     ]
