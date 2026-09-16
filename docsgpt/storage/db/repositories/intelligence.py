@@ -92,6 +92,116 @@ class IntelligenceRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def find_project(self, user_id: str, repository: str) -> dict[str, Any] | None:
+        """Return an owner's project for a repository, if it already exists."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT *
+                FROM intelligence_projects
+                WHERE user_id = :user_id
+                  AND repository = :repository
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_id, "repository": repository},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def list_projects(self, user_id: str) -> list[dict[str, Any]]:
+        """List all intelligence projects owned by ``user_id``."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT *
+                FROM intelligence_projects
+                WHERE user_id = :user_id
+                ORDER BY created_at ASC, id ASC
+                """
+            ),
+            {"user_id": user_id},
+        )
+        return [row_to_dict(row) for row in result.fetchall()]
+
+    def get_sync_run(self, run_id: str, user_id: str) -> dict[str, Any] | None:
+        """Return a synchronization run only through an owned project."""
+        result = self._conn.execute(
+            text(
+                """
+                SELECT r.*
+                FROM intelligence_sync_runs AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE r.id = CAST(:run_id AS uuid)
+                  AND p.user_id = :user_id
+                """
+            ),
+            {"run_id": run_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
+    def overview(self, user_id: str) -> dict[str, Any]:
+        """Return owner-scoped record counts and synchronization coverage."""
+        totals = self._conn.execute(
+            text(
+                """
+                SELECT COUNT(DISTINCT p.id) AS projects,
+                       COUNT(r.id) AS records,
+                       MIN(p.window_start) AS date_from,
+                       MAX(p.window_end) AS date_to,
+                       MAX(p.last_synced_at) AS last_synced_at
+                FROM intelligence_projects AS p
+                LEFT JOIN intelligence_records AS r ON r.project_id = p.id
+                WHERE p.user_id = :user_id
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchone()
+        counts = self._conn.execute(
+            text(
+                """
+                SELECT r.source_type, COUNT(*) AS count
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE p.user_id = :user_id
+                GROUP BY r.source_type
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchall()
+        statuses = self._conn.execute(
+            text(
+                """
+                SELECT p.status, COUNT(*) AS count
+                FROM intelligence_projects AS p
+                WHERE p.user_id = :user_id
+                GROUP BY p.status
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchall()
+
+        totals_row = row_to_dict(totals)
+        return {
+            "projects": int(totals_row.get("projects") or 0),
+            "records": int(totals_row.get("records") or 0),
+            "counts": {
+                str(row._mapping["source_type"]): int(row._mapping["count"])
+                for row in counts
+            },
+            "coverage": {
+                "date_from": totals_row.get("date_from"),
+                "date_to": totals_row.get("date_to"),
+            },
+            "last_synced_at": totals_row.get("last_synced_at"),
+            "statuses": {
+                str(row._mapping["status"]): int(row._mapping["count"])
+                for row in statuses
+            },
+        }
+
     def upsert_record(self, project_id: str, record: IntelligenceRecord) -> UpsertOutcome:
         """Insert or update a normalized record using its stable content hash.
 

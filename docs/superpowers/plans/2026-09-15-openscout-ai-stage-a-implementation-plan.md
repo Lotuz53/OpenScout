@@ -667,7 +667,7 @@ git commit -m "feat(openscout): index changed evidence records"
 - 输入：按所有者隔离的仓储、Celery 任务、`HybridRetriever` 和任务 1 的数据模型。
 - 输出：`POST /api/intelligence/projects`、`POST /api/intelligence/projects/<id>/sync`、`GET /api/intelligence/projects`、`GET /api/intelligence/projects/<id>`、`GET /api/intelligence/sync-runs/<id>`、`GET /api/intelligence/overview` 和 `POST /api/intelligence/query`。
 
-- [ ] **步骤 1：编写认证、所有权和响应结构 API 测试**
+- [x] **步骤 1：编写认证、所有权和响应结构 API 测试**
 
 ```python
 def test_query_requires_auth(client) -> None:
@@ -688,17 +688,17 @@ def test_stage_a_seed_contains_exact_repositories() -> None:
     ]
 ```
 
-- [ ] **步骤 2：运行测试并确认路由失败**
+- [x] **步骤 2：运行测试并确认路由失败**
 
 运行：`python -m pytest tests/api/user/intelligence/test_routes.py tests/intelligence/test_query_service.py -q`
 
 预期：FAIL，返回 404 或提示缺少导入。
 
-- [ ] **步骤 3：实现轻量命名空间和请求校验**
+- [x] **步骤 3：实现轻量命名空间和请求校验**
 
 设置 `Namespace("intelligence", path="/api")`；读取 `request.decoded_token["sub"]`；在数据库类型转换前拒绝格式错误的 UUID；在 `db_readonly()`/`db_session()` 中调用服务；路由内不得执行 SQL。增加幂等预置函数，用固定窗口创建阶段 A 的三个仓库，重复运行不得产生重复项目。
 
-- [ ] **步骤 4：实现第一版仅使用 Hybrid 的查询链路**
+- [x] **步骤 4：实现第一版仅使用 Hybrid 的查询链路**
 
 ```python
 class QueryService:
@@ -710,7 +710,7 @@ class QueryService:
 
 本任务中 `trace.strategy` 固定为 `hybrid`；SQL、路由和 GraphRAG 在后续任务实现。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/api/user/intelligence/test_routes.py tests/intelligence/test_query_service.py -q`
 
