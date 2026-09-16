@@ -74,7 +74,7 @@ def test_compile_metadata_filter_uses_index_metadata_fields() -> None:
     assert compiled == {
         "repository": {"$in": ["langgenius/dify"]},
         "source_type": {"$in": ["issue", "release"]},
-        "occurred_at": {"$gte": "2026-01-01", "$lte": "2026-02-01"},
+        "occurred_at": {"$gte": "2026-01-01", "$lt": "2026-02-02"},
     }
 
 

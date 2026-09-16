@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from docsgpt.intelligence.schemas import FilterSource, QueryFilters
@@ -61,7 +61,7 @@ def compile_metadata_filter(filters: QueryFilters) -> dict[str, Any]:
     if filters.date_from is not None:
         occurred_at["$gte"] = filters.date_from.isoformat()
     if filters.date_to is not None:
-        occurred_at["$lte"] = filters.date_to.isoformat()
+        occurred_at["$lt"] = (filters.date_to + timedelta(days=1)).isoformat()
     if occurred_at:
         compiled["occurred_at"] = occurred_at
     return compiled
