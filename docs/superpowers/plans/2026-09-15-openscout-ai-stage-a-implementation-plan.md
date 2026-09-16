@@ -1124,9 +1124,9 @@ def test_export_retry_does_not_rerun_query(report_service, query_service) -> Non
 
 章节固定为：执行摘要、功能对比、反馈趋势、产品机会线索、风险与证据限制、完整来源。渲染前先保存结构化 JSON；渲染器只接受 `ReportDocument`。
 
-- [x] **步骤 4：实现需要认证的导出接口**
+- [ ] **步骤 4：实现需要认证的导出接口**
 
-Markdown 使用 UTF-8 附件响应；PDF 使用 ReportLab 和存放在合规资源目录中的内嵌中日韩字体，或复用项目现有字体。导出失败时保留报告记录，返回可重试的 500，且不得重新执行查询。
+Markdown 使用 UTF-8 附件响应；PDF 使用 ReportLab 和存放在合规资源目录中的内嵌中日韩字体，或复用项目现有字体。导出失败时保留报告记录，返回可重试的 500，且不得重新执行查询。当前代码支持 `OPENSCOUT_CJK_FONT`、约定的包内字体路径和运行环境字体，并以 `STSong-Light` 回退；仓库尚无经过许可的可分发 CJK 字体资产，因此该部署条件仍待补齐。
 
 - [x] **步骤 5：验证并提交**
 
@@ -1334,7 +1334,7 @@ git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
 
-> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此步骤 4 和步骤 5 仍待补齐，不能把 Task17 记为完全通过。
+> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。Task14 的报告渲染测试通过，但可复现的合规 CJK 字体资产尚未随仓库提供，发布前仍需通过配置或合规资源目录补齐。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此 Task14 的步骤 4、Task17 的步骤 4 和步骤 5 仍待补齐，不能把阶段 A 记为完全通过。
 
 ## 阶段 A 自检记录
 

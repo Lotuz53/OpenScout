@@ -50,6 +50,15 @@ Stage A 固定为三个仓库和一个时间窗口，仍缺少 Stage B 计划中
 不会被推断成“没有该功能”。GraphRAG、重排器和外部模型均可能回退；回退原因必须
 在响应追踪中披露。
 
+## PDF 字体部署限制
+
+PDF 渲染器优先读取 `OPENSCOUT_CJK_FONT`，其次查找约定的
+`docsgpt/intelligence/resources/fonts/NotoSansCJKsc-Regular.otf` 和运行环境字体，
+最后使用 ReportLab 的 `STSong-Light` 回退。当前仓库没有随代码分发的 CJK 字体资产，
+所以本地测试可以通过，但不同容器或 PDF 阅读器可能使用不同字体替代。发布前必须
+提供经过许可的 CJK 字体文件并通过 `OPENSCOUT_CJK_FONT` 或合规资源目录配置；不得
+把 macOS 系统字体直接复制进仓库，也不得将未验证的字体写成已完成的发布证据。
+
 ## 截图与短视频清单
 
 PR 需要由维护者在本地运行 UI 后保存以下材料。本次提交不伪造图片或视频，也不把
