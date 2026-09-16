@@ -47,10 +47,10 @@
 - Consumes: the Task 1 commit on `feature/openscout-design`.
 - Produces: `main` and `feature/openscout-design` pointing to the same current commit, with `main` as the GitHub default branch.
 
-- [ ] Move the local `main` pointer to the current OpenScout commit without checking out or changing the worktree.
-- [ ] Set local `origin` to `https://github.com/Lotuz53/OpenScout.git` and add DocsGPT as `upstream`.
-- [ ] Push `main` and set the GitHub default branch to `main`.
-- [ ] Push the current development branch if its final commit changed, then verify both remote branch hashes.
+- [x] Move the local `main` pointer to the current OpenScout commit without checking out or changing the worktree.
+- [x] Set local `origin` to `https://github.com/Lotuz53/OpenScout.git` and add DocsGPT as `upstream`.
+- [x] Push `main` and set the GitHub default branch to `main`.
+- [x] Push the current development branch if its final commit changed, then verify both remote branch hashes.
 
 ### Task 3: Final repository presentation verification
 
@@ -61,7 +61,9 @@
 - Consumes: the published `main` and `feature/openscout-design` branches.
 - Produces: verified repository metadata and a clean, intentionally preserved worktree state.
 
-- [ ] Confirm GitHub reports `main` as the default branch and the repository is not falsely represented as a GitHub fork.
-- [ ] Confirm the root README is OpenScout-first and the latest commit is the expected OpenScout commit.
-- [ ] Confirm only the pre-existing `AGENTS.md` modification remains uncommitted.
-- [ ] Record the remote branch/tag hashes and any non-blocking GitHub warnings.
+- [x] Confirm GitHub reports `main` as the default branch and the repository is not falsely represented as a GitHub fork.
+- [x] Confirm the root README is OpenScout-first and the latest commit is the expected OpenScout commit.
+- [x] Confirm only the pre-existing `AGENTS.md` modification remains uncommitted.
+- [x] Record the remote branch/tag hashes and any non-blocking GitHub warnings.
+
+**Final verification:** `main` and `feature/openscout-design` both point to `bc4530e3554712d54d08ecd24842a6398ff25773`; `openscout-stage-a` remains at `acb8b3d5b618a8bcc2b7f30fb11f5ed33682025d`. GitHub reports `default_branch=main`, `fork=false`, and no parent repository. GitHub warned that the pre-existing `tests/e2e/fixtures/docs/oversize.pdf` is 55 MB, but accepted the push.
