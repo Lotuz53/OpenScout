@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from datetime import date, datetime, time, timezone
@@ -11,6 +12,7 @@ from requests import RequestException
 from sqlalchemy import text
 
 from docsgpt.intelligence.github_client import GitHubClient, GitHubRateLimitError
+from docsgpt.intelligence.graph_selection import select_graph_records
 from docsgpt.intelligence.normalizer import (
     normalize_comment,
     normalize_document,
@@ -35,6 +37,8 @@ COMMENT_LIMIT = 20
 # ``autoretry_for`` without changing the existing GitHub client exception.
 RecoverableGitHubError = (GitHubRateLimitError, RequestException)
 SessionFactory = Callable[[], AbstractContextManager[Any]]
+GRAPH_ISSUE_LIMIT = 300
+logger = logging.getLogger(__name__)
 
 
 class SyncService:
@@ -55,6 +59,8 @@ class SyncService:
         session_factory: SessionFactory | None = None,
         readonly_factory: SessionFactory | None = None,
         now_factory: Callable[[], datetime] | None = None,
+        graph_extractor: Any | None = None,
+        graph_enabled: bool | None = None,
     ) -> None:
         """Initialize a synchronization service.
 
@@ -71,6 +77,10 @@ class SyncService:
             readonly_factory: Optional read-only transaction factory for the
                 owner-scoped project lookup.
             now_factory: Clock injection for deterministic tests.
+            graph_extractor: Optional asynchronous extraction task. When
+                omitted, the production Celery task is resolved lazily.
+            graph_enabled: Optional GraphRAG kill-switch. ``False`` disables
+                enqueueing; an injected extractor is enabled by default.
         """
         self.repository = repository
         self.github = github
@@ -78,6 +88,8 @@ class SyncService:
         self.session_factory = session_factory
         self.readonly_factory = readonly_factory
         self.now_factory = now_factory or (lambda: datetime.now(tz=UTC))
+        self.graph_extractor = graph_extractor
+        self.graph_enabled = graph_enabled
 
     def run(self, project_id: str, user_id: str) -> SyncSummary:
         """Synchronize one owner-scoped project and return its summary.
@@ -120,6 +132,7 @@ class SyncService:
             document_ok, _, document_capped = self._run_source(
                 project_id=project_id,
                 source_type=SourceType.DOCUMENTATION,
+                user_id=user_id,
                 producer=lambda: (
                     [
                         _normalize_document_item(
@@ -142,6 +155,7 @@ class SyncService:
         release_ok, _, release_capped = self._run_source(
             project_id=project_id,
             source_type=SourceType.RELEASE,
+            user_id=user_id,
             producer=lambda: (
                 [
                     normalize_release(repository_name, raw, retrieved_at)
@@ -173,6 +187,7 @@ class SyncService:
         issue_ok, _, issue_capped = self._run_source(
             project_id=project_id,
             source_type=SourceType.ISSUE,
+            user_id=user_id,
             producer=collect_issues,
             counts=counts,
             failures=failures,
@@ -186,6 +201,7 @@ class SyncService:
             comment_ok, _, comment_capped = self._run_source(
                 project_id=project_id,
                 source_type=SourceType.ISSUE_COMMENT,
+                user_id=user_id,
                 producer=lambda: self._collect_comments(
                     repository_name,
                     issue_raws,
@@ -231,6 +247,7 @@ class SyncService:
         *,
         project_id: str,
         source_type: SourceType,
+        user_id: str,
         producer: Callable[[], tuple[list[IntelligenceRecord], bool]],
         counts: dict[SourceType, int],
         failures: list[SyncFailure],
@@ -246,7 +263,7 @@ class SyncService:
         # One call opens one transaction for the entire source batch. A
         # failure here is a local consistency failure and must not be recast as
         # a successful GitHub partial result.
-        self._persist_batch(project_id, records)
+        self._persist_batch(project_id, records, user_id=user_id)
         counts[source_type] = len(records)
         observed_dates.extend(
             record_date
@@ -291,6 +308,8 @@ class SyncService:
         self,
         project_id: str,
         records: Sequence[IntelligenceRecord],
+        *,
+        user_id: str | None = None,
     ) -> None:
         """Upsert and index a source batch inside one write transaction."""
         if not records:
@@ -310,7 +329,128 @@ class SyncService:
             if changed_records:
                 indexer = self._get_indexer(project_id, repository)
                 if indexer is not None:
-                    indexer.replace_records(project_id, changed_records)
+                    index_summary = indexer.replace_records(project_id, changed_records)
+                    self._enqueue_graph_extraction(
+                        project_id,
+                        user_id,
+                        changed_records,
+                        index_summary,
+                    )
+
+    def _enqueue_graph_extraction(
+        self,
+        project_id: str,
+        user_id: str | None,
+        records: Sequence[IntelligenceRecord],
+        index_summary: Any,
+    ) -> None:
+        """Queue selected indexed chunks for asynchronous GraphRAG extraction.
+
+        Graph extraction is deliberately best-effort. A broker or graph
+        configuration failure must not turn a successfully committed GitHub
+        batch into a failed synchronization result.
+        """
+        if not records or not self._graph_is_enabled():
+            return
+        chunks = self._graph_chunks(project_id, records, index_summary)
+        if not chunks:
+            return
+
+        try:
+            extractor = self.graph_extractor or self._default_graph_extractor()
+            config = self._graph_config()
+            delay = getattr(extractor, "delay", None)
+            if callable(delay):
+                delay(
+                    project_id,
+                    user_id,
+                    chunks,
+                    config=config.model_dump(mode="json"),
+                    request_id=None,
+                )
+                return
+            apply_async = getattr(extractor, "apply_async", None)
+            if callable(apply_async):
+                apply_async(
+                    args=(project_id, user_id, chunks),
+                    kwargs={
+                        "config": config.model_dump(mode="json"),
+                        "request_id": None,
+                    },
+                )
+                return
+            logger.warning("GraphRAG extractor has no asynchronous enqueue method")
+        except Exception:
+            logger.warning(
+                "Could not enqueue GraphRAG extraction for project %s",
+                project_id,
+                exc_info=True,
+            )
+
+    def _graph_is_enabled(self) -> bool:
+        """Resolve the GraphRAG gate without importing it on every sync."""
+        if self.graph_enabled is not None:
+            return self.graph_enabled
+        if self.graph_extractor is not None:
+            return True
+        try:
+            from docsgpt.graphrag import graphrag_available
+
+            return bool(graphrag_available())
+        except Exception:
+            logger.debug("GraphRAG availability check failed", exc_info=True)
+            return False
+
+    def _default_graph_extractor(self) -> Any:
+        """Resolve the intelligence-specific Celery extraction task lazily."""
+        from docsgpt.intelligence.tasks import extract_intelligence_graph
+
+        return extract_intelligence_graph
+
+    @staticmethod
+    def _graph_config() -> Any:
+        """Build the default graph extraction configuration for intelligence data."""
+        from docsgpt.storage.db.source_config import SourceConfig
+
+        return SourceConfig(kind="graphrag")
+
+    @staticmethod
+    def _graph_chunks(
+        project_id: str,
+        records: Sequence[IntelligenceRecord],
+        index_summary: Any,
+    ) -> list[dict[str, Any]]:
+        """Attach returned vector ids to chunks from the selected records."""
+        del project_id
+        chunk_ids = getattr(index_summary, "chunk_ids", None)
+        if not isinstance(chunk_ids, list) or not chunk_ids:
+            return []
+
+        from docsgpt.intelligence.indexing import chunks_for_record
+
+        selected = select_graph_records(records, issue_limit=GRAPH_ISSUE_LIMIT)
+        selected_ids = {
+            record.id or f"{record.source_type.value}:{record.external_id}"
+            for record in selected
+        }
+        chunks: list[dict[str, Any]] = []
+        id_offset = 0
+        for record in records:
+            record_chunks = chunks_for_record(record)
+            record_ids = chunk_ids[id_offset : id_offset + len(record_chunks)]
+            id_offset += len(record_chunks)
+            record_id = record.id or f"{record.source_type.value}:{record.external_id}"
+            if record_id not in selected_ids:
+                continue
+            chunks.extend(
+                {
+                    "doc_id": str(chunk_id),
+                    "text": chunk.page_content,
+                    "metadata": chunk.metadata,
+                }
+                for chunk, chunk_id in zip(record_chunks, record_ids)
+            )
+        return chunks
 
     def _get_indexer(self, project_id: str, repository: Any) -> Any | None:
         """Return the injected indexer or build the production one lazily."""

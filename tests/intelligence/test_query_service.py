@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from docsgpt.intelligence.query_service import QueryService
+from docsgpt.intelligence.query_router import QueryRouter
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
@@ -13,6 +14,8 @@ from docsgpt.intelligence.schemas import (
     Coverage,
     Evidence,
     QueryRequest,
+    QueryIntent,
+    RouteDecision,
     RetrievalStrategy,
     SourceType,
 )
@@ -100,3 +103,103 @@ def test_query_service_rejects_citations_not_in_evidence() -> None:
 
     with pytest.raises(ValueError, match="unknown evidence"):
         service.query(QueryRequest(question="What happened?"), "user-1")
+
+
+def test_graph_failure_falls_back_and_traces_reason() -> None:
+    retriever = MagicMock()
+    retriever.retrieve.return_value = [_evidence()]
+    graph_retriever = MagicMock()
+    graph_retriever.retrieve.side_effect = RuntimeError("graph store unavailable")
+    generator = MagicMock()
+    generator.generate.return_value = {"answer": "supported", "claims": []}
+    analytics = MagicMock()
+    router = QueryRouter(
+        parser=lambda request: RouteDecision(
+            intent=QueryIntent.RELATIONAL,
+            strategy=RetrievalStrategy.GRAPHRAG,
+            confidence=0.9,
+        )
+    )
+    request = QueryRequest(question="How are these issues related?")
+
+    result = QueryService(
+        retriever=retriever,
+        generator=generator,
+        coverage=_coverage,
+        router=router,
+        graph_retriever=graph_retriever,
+        analytics=analytics,
+    ).query(request, "u1")
+
+    assert result.trace.strategy == RetrievalStrategy.HYBRID
+    assert result.trace.fallback_reason == "graphrag_unavailable"
+    graph_retriever.retrieve.assert_called_once()
+    retriever.retrieve.assert_called_once_with(request.question, request.filters)
+    analytics.run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("graph_result", "graph_error", "reason"),
+    [
+        ({"status": "incomplete", "evidence": []}, None, "graphrag_incomplete"),
+        (None, TimeoutError("graph timeout"), "graphrag_timeout"),
+    ],
+)
+def test_graph_fallback_traces_incomplete_and_timeout(
+    graph_result, graph_error, reason
+) -> None:
+    retriever = MagicMock()
+    retriever.retrieve.return_value = [_evidence()]
+    graph_retriever = MagicMock()
+    if graph_error is not None:
+        graph_retriever.retrieve.side_effect = graph_error
+    else:
+        graph_retriever.retrieve.return_value = graph_result
+    generator = MagicMock()
+    generator.generate.return_value = {"answer": "supported", "claims": []}
+    router = QueryRouter(
+        parser=lambda request: RouteDecision(
+            intent=QueryIntent.RELATIONAL,
+            strategy=RetrievalStrategy.GRAPHRAG,
+            confidence=0.9,
+        )
+    )
+
+    result = QueryService(
+        retriever=retriever,
+        generator=generator,
+        coverage=_coverage,
+        router=router,
+        graph_retriever=graph_retriever,
+    ).query(QueryRequest(question="How are these issues related?"), "u1")
+
+    assert result.trace.strategy == RetrievalStrategy.HYBRID
+    assert result.trace.fallback_reason == reason
+
+
+def test_disabled_graph_falls_back_without_calling_adapter() -> None:
+    retriever = MagicMock()
+    retriever.retrieve.return_value = [_evidence()]
+    graph_retriever = MagicMock()
+    generator = MagicMock()
+    generator.generate.return_value = {"answer": "supported", "claims": []}
+    router = QueryRouter(
+        parser=lambda request: RouteDecision(
+            intent=QueryIntent.RELATIONAL,
+            strategy=RetrievalStrategy.GRAPHRAG,
+            confidence=0.9,
+        )
+    )
+
+    result = QueryService(
+        retriever=retriever,
+        generator=generator,
+        coverage=_coverage,
+        router=router,
+        graph_retriever=graph_retriever,
+        graph_enabled=False,
+    ).query(QueryRequest(question="How are these issues related?"), "u1")
+
+    assert result.trace.strategy == RetrievalStrategy.HYBRID
+    assert result.trace.fallback_reason == "graphrag_disabled"
+    graph_retriever.retrieve.assert_not_called()

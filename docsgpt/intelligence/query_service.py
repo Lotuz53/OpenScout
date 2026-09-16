@@ -34,6 +34,10 @@ from docsgpt.intelligence.schemas import (
 logger = logging.getLogger(__name__)
 
 NO_EVIDENCE_ANSWER = "当前收录数据无法支持该结论。"
+GRAPHRAG_DISABLED = "graphrag_disabled"
+GRAPHRAG_INCOMPLETE = "graphrag_incomplete"
+GRAPHRAG_TIMEOUT = "graphrag_timeout"
+GRAPHRAG_UNAVAILABLE = "graphrag_unavailable"
 
 
 def _optional_method(instance: Any, name: str) -> Any:
@@ -197,6 +201,8 @@ class QueryService:
         filter_inferer: Callable[[str], QueryFilters | Mapping[str, Any]] | None = None,
         router: QueryRouter | None = None,
         analytics: Any | None = None,
+        graph_retriever: Any | None = None,
+        graph_enabled: bool | None = None,
     ) -> None:
         """Initialize the service with injectable retrieval dependencies.
 
@@ -213,6 +219,10 @@ class QueryService:
                 original factual Hybrid path is preserved.
             analytics: Optional SQL-first aggregate service used by routed
                 aggregate questions.
+            graph_retriever: Optional GraphRAG adapter exposing ``retrieve`` or
+                ``search``. It is only called for a routed relational question.
+            graph_enabled: Optional explicit GraphRAG kill-switch. ``False``
+                records a disabled fallback without calling the adapter.
         """
         self.retriever = retriever or _EmptyRetriever()
         self.generator = generator or _EvidenceOnlyGenerator()
@@ -221,6 +231,8 @@ class QueryService:
         self.filter_inferer = filter_inferer
         self.router = router
         self.analytics = analytics
+        self.graph_retriever = graph_retriever
+        self.graph_enabled = graph_enabled
 
     def _infer_filters(self, question: str) -> QueryFilters:
         """Resolve implicit filters without blocking a query on parser errors."""
@@ -293,6 +305,73 @@ class QueryService:
             else AggregateResult.model_validate(result)
         )
 
+    def _retrieve_graph(
+        self,
+        request: QueryRequest,
+        filters: QueryFilters,
+    ) -> tuple[list[Evidence], str | None]:
+        """Retrieve relational evidence through GraphRAG with one safe fallback.
+
+        The intelligence layer accepts a narrow adapter boundary instead of
+        constructing a source-aware ``GraphRAGRetriever`` itself. This keeps
+        ownership and source selection in application wiring while allowing
+        tests and deployments to provide either ``retrieve`` or ``search``.
+
+        Returns:
+            A pair of evidence and an optional fallback reason. A non-null
+            reason means the caller must execute the ordinary Hybrid path once.
+        """
+        if self.graph_enabled is False:
+            return [], GRAPHRAG_DISABLED
+        retriever = self.graph_retriever
+        if retriever is None:
+            return [], GRAPHRAG_UNAVAILABLE
+        if getattr(retriever, "enabled", True) is False:
+            return [], GRAPHRAG_DISABLED
+
+        try:
+            retrieve = getattr(retriever, "retrieve", None)
+            if callable(retrieve):
+                result = retrieve(request.question, filters)
+            else:
+                search = getattr(retriever, "search", None)
+                if not callable(search):
+                    return [], GRAPHRAG_UNAVAILABLE
+                result = search(request.question)
+        except TimeoutError:
+            logger.warning("GraphRAG retrieval timed out; falling back to Hybrid")
+            return [], GRAPHRAG_TIMEOUT
+        except Exception:
+            logger.exception("GraphRAG retrieval failed; falling back to Hybrid")
+            return [], GRAPHRAG_UNAVAILABLE
+
+        status = None
+        if isinstance(result, Mapping):
+            status = result.get("status")
+            result = result.get("evidence", result.get("results", result))
+        else:
+            status = getattr(result, "status", None)
+            result = getattr(result, "evidence", result)
+        normalized_status = str(status or "").casefold()
+        if normalized_status in {"disabled", "unavailable"}:
+            return [], (
+                GRAPHRAG_DISABLED
+                if normalized_status == "disabled"
+                else GRAPHRAG_UNAVAILABLE
+            )
+        if normalized_status in {"incomplete", "pending"}:
+            return [], GRAPHRAG_INCOMPLETE
+        if result is None:
+            return [], GRAPHRAG_INCOMPLETE
+        try:
+            evidence = _coerce_evidence(result)
+        except Exception:
+            logger.exception("GraphRAG returned invalid evidence; falling back to Hybrid")
+            return [], GRAPHRAG_UNAVAILABLE
+        if not evidence:
+            return [], GRAPHRAG_INCOMPLETE
+        return evidence, None
+
     def _coverage(self, filters: QueryFilters, user_id: str) -> Coverage:
         """Resolve coverage from a fixed value or injected callable."""
         if isinstance(self.coverage, Coverage):
@@ -329,11 +408,25 @@ class QueryService:
             effective_filters,
             user_id,
         )
-        evidence = (
-            list(aggregate_result.evidence)
-            if aggregate_result is not None and aggregate_result.evidence
-            else self._retrieve(request, effective_filters)
-        )
+        fallback_reason = route.fallback_reason if route is not None else None
+        strategy = route.strategy if route is not None else None
+        if aggregate_result is not None and aggregate_result.evidence:
+            evidence = list(aggregate_result.evidence)
+        elif (
+            route is not None
+            and route.intent == QueryIntent.RELATIONAL
+            and route.strategy == RetrievalStrategy.GRAPHRAG
+        ):
+            evidence, graph_fallback_reason = self._retrieve_graph(
+                request,
+                effective_filters,
+            )
+            if graph_fallback_reason is not None:
+                evidence = self._retrieve(request, effective_filters)
+                strategy = RetrievalStrategy.HYBRID
+                fallback_reason = graph_fallback_reason
+        else:
+            evidence = self._retrieve(request, effective_filters)
         if self.reranker is not None:
             evidence = safe_rerank(
                 self.reranker,
@@ -362,8 +455,8 @@ class QueryService:
             trace=RetrievalTrace(
                 intent=route.intent if route is not None else QueryIntent.FACTUAL,
                 strategy=(
-                    route.strategy
-                    if route is not None
+                    strategy
+                    if strategy is not None
                     else (
                         RetrievalStrategy.HYBRID_RERANK
                         if self.reranker is not None
@@ -371,7 +464,7 @@ class QueryService:
                         else RetrievalStrategy.HYBRID
                     )
                 ),
-                fallback_reason=route.fallback_reason if route is not None else None,
+                fallback_reason=fallback_reason,
                 applied_filters=effective_filters,
                 explicit_filters=explicit_filters,
                 inferred_filters=inferred_filters,
@@ -383,4 +476,11 @@ class QueryService:
         )
 
 
-__all__ = ["QueryService", "enforce_citations"]
+__all__ = [
+    "GRAPHRAG_DISABLED",
+    "GRAPHRAG_INCOMPLETE",
+    "GRAPHRAG_TIMEOUT",
+    "GRAPHRAG_UNAVAILABLE",
+    "QueryService",
+    "enforce_citations",
+]

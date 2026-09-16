@@ -22,6 +22,30 @@ def build_sync_service() -> SyncService:
     )
 
 
+@celery.task(bind=True, acks_late=True)
+def extract_intelligence_graph(
+    self: Any,
+    source_id: str,
+    user_id: str | None,
+    chunks: list[dict[str, Any]],
+    *,
+    config: dict[str, Any] | None = None,
+    request_id: str | None = None,
+) -> dict[str, int]:
+    """Extract a selected intelligence graph in a separate worker task."""
+    from docsgpt.graphrag.extraction import extract_graph_for_source
+    from docsgpt.storage.db.source_config import SourceConfig
+
+    source_config = SourceConfig.parse(config)
+    return extract_graph_for_source(
+        str(source_id),
+        user_id,
+        chunks,
+        config=source_config,
+        request_id=request_id or getattr(self.request, "id", None),
+    )
+
+
 @celery.task(
     bind=True,
     acks_late=True,
@@ -43,4 +67,8 @@ def sync_intelligence_project(
     return summary.model_dump(mode="json")
 
 
-__all__ = ["build_sync_service", "sync_intelligence_project"]
+__all__ = [
+    "build_sync_service",
+    "extract_intelligence_graph",
+    "sync_intelligence_project",
+]

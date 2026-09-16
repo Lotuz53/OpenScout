@@ -118,6 +118,8 @@ def test_default_router_classifies_supported_intents(
 def test_query_service_traces_explicit_route_decision() -> None:
     retriever = MagicMock()
     retriever.retrieve.return_value = [_evidence()]
+    graph_retriever = MagicMock()
+    graph_retriever.retrieve.return_value = [_evidence()]
     generator = MagicMock()
     generator.generate.return_value = {"answer": "supported", "claims": []}
     router = QueryRouter(
@@ -133,6 +135,7 @@ def test_query_service_traces_explicit_route_decision() -> None:
         generator=generator,
         coverage=_coverage,
         router=router,
+        graph_retriever=graph_retriever,
     ).query(QueryRequest(question="How are these issues related?"), "user-1")
 
     assert result.trace.intent == QueryIntent.RELATIONAL

@@ -969,16 +969,20 @@ git commit -m "feat(openscout): cluster feedback and compare products"
 **文件：**
 - 新建： `docsgpt/intelligence/graph_selection.py`
 - 修改： `docsgpt/intelligence/sync_service.py`
+- 修改： `docsgpt/intelligence/tasks.py`
 - 修改： `docsgpt/intelligence/query_service.py`
 - 新建： `tests/intelligence/test_graph_selection.py`
 - 修改： `tests/intelligence/test_query_service.py`
+- 修改： `tests/intelligence/test_query_router.py`
+- 修改： `tests/intelligence/test_sync_service.py`
 - 新建： `evaluation/configs/routed.yaml`
+- 新建： `evaluation/results/routed.dev.jsonl`
 
 **接口：**
 - 输入：持久化记录、现有 `extract_graph_for_source(source_id: str, user: str | None, chunks: list[dict[str, Any]], *, config: SourceConfig, request_id: str | None = None) -> dict[str, int]` 和 `GraphRAGRetriever`。
 - 输出：`signal_score(comments_count, reactions_count, maxima) -> float`、`select_graph_records(records, issue_limit=300)` 和经过路由的 GraphRAG 回退追踪信息。
 
-- [ ] **步骤 1：编写数量上限、排序、排除和回退测试**
+- [x] **步骤 1：编写数量上限、排序、排除和回退测试**
 
 ```python
 def test_graph_subset_caps_issues_but_keeps_docs_and_releases(records) -> None:
@@ -993,13 +997,13 @@ def test_graph_failure_falls_back_and_traces_reason(query_service) -> None:
     assert result.trace.fallback_reason == "graphrag_unavailable"
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_graph_selection.py tests/intelligence/test_query_service.py -q`
 
 预期：FAIL，提示缺少筛选器或回退行为。
 
-- [ ] **步骤 3：实现归一化高信号排序**
+- [x] **步骤 3：实现归一化高信号排序**
 
 ```python
 def signal_score(comments: int, reactions: int, max_comments: int, max_reactions: int) -> float:
@@ -1010,11 +1014,11 @@ def signal_score(comments: int, reactions: int, max_comments: int, max_reactions
 
 依次按得分降序、`updated_at` 和外部 id 排序，保证同分结果确定。
 
-- [ ] **步骤 4：接入选择性图谱抽取和查询回退**
+- [x] **步骤 4：接入选择性图谱抽取和查询回退**
 
 图谱抽取在向量索引完成后异步运行。查询服务只对 `relational` 使用 GraphRAG；功能禁用、未完成、失败或超时时，执行一次 Hybrid 并记录准确原因。统计模块不得接收来自图谱的记录。
 
-- [ ] **步骤 5：运行路由实验并提交**
+- [x] **步骤 5：运行路由实验并提交**
 
 运行：`python -m pytest tests/intelligence/test_graph_selection.py tests/intelligence/test_query_service.py -q`
 
