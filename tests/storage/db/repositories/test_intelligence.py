@@ -109,8 +109,42 @@ def test_sync_run_persists_summary(pg_conn, project) -> None:
     assert finished["counts"]["issue"] == 1
 
 
-def test_overview_includes_latest_owner_sync_run(pg_conn, project) -> None:
+def test_overview_includes_latest_owner_sync_run(
+    pg_conn,
+    project,
+    intelligence_record,
+) -> None:
     repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    issue = repo.upsert_record(project_id, intelligence_record)
+    release = IntelligenceRecord(
+        repository="langgenius/dify",
+        source_type=SourceType.RELEASE,
+        external_id="release:v1.2.3",
+        title="v1.2.3",
+        body="Release notes",
+        source_url="https://github.com/langgenius/dify/releases/tag/v1.2.3",
+        version="v1.2.3",
+        created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        published_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        retrieved_at=datetime(2026, 2, 2, tzinfo=timezone.utc),
+        content_hash="release-v1.2.3",
+    )
+    repo.upsert_record(project_id, release)
+    repo.save_topic_run(
+        project_id=project_id,
+        snapshot_id="snapshot-1",
+        algorithm_version="spherical-kmeans-v1",
+        clusters=[
+            {
+                "id": "topic-1",
+                "label": "SSO",
+                "record_ids": [issue.record_id],
+                "centroid": [1.0],
+                "snapshot_id": "snapshot-1",
+            }
+        ],
+    )
     run = repo.start_sync_run(str(project["id"]))
     summary = SyncSummary(
         status="partial",
@@ -128,6 +162,7 @@ def test_overview_includes_latest_owner_sync_run(pg_conn, project) -> None:
             date_from=date(2025, 9, 14),
             date_to=date(2026, 9, 14),
             counts={SourceType.ISSUE: 1},
+            capped=True,
         ),
     )
     repo.finish_sync_run(str(run["id"]), summary)
@@ -138,6 +173,9 @@ def test_overview_includes_latest_owner_sync_run(pg_conn, project) -> None:
     assert str(latest_run["id"]) == str(run["id"])
     assert latest_run["status"] == "partial"
     assert latest_run["failures"][0]["category"] == "network"
+    assert overview["capped"] is True
+    assert overview["latest_version"] == "v1.2.3"
+    assert overview["topics"][0]["label"] == "SSO"
 
 
 def test_save_report_is_owner_scoped(pg_conn) -> None:

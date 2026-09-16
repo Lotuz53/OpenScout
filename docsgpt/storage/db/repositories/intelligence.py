@@ -236,8 +236,49 @@ class IntelligenceRepository:
             ),
             {"user_id": user_id},
         ).fetchone()
+        latest_release_row = self._conn.execute(
+            text(
+                f"""
+                SELECT r.version
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE p.user_id = :user_id
+                  AND r.active IS TRUE
+                  AND r.source_type = 'release'
+                  AND r.version IS NOT NULL
+                ORDER BY {_OCCURRED_AT_SQL} DESC NULLS LAST, r.id DESC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchone()
+        capped_row = self._conn.execute(
+            text(
+                """
+                SELECT COALESCE(
+                           BOOL_OR(
+                               COALESCE((latest.coverage->>'capped')::boolean, false)
+                           ),
+                           false
+                       ) AS capped
+                FROM intelligence_projects AS p
+                LEFT JOIN LATERAL (
+                    SELECT s.coverage
+                    FROM intelligence_sync_runs AS s
+                    WHERE s.project_id = p.id
+                    ORDER BY s.created_at DESC, s.id DESC
+                    LIMIT 1
+                ) AS latest ON true
+                WHERE p.user_id = :user_id
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchone()
 
         totals_row = row_to_dict(totals)
+        latest_release = row_to_dict(latest_release_row) if latest_release_row is not None else {}
+        capped_data = row_to_dict(capped_row) if capped_row is not None else {}
+        topics = self.topic_trends(user_id, [], QueryFilters())
         latest_sync_run = None
         if latest_run_row is not None:
             latest_row = row_to_dict(latest_run_row)
@@ -279,6 +320,9 @@ class IntelligenceRepository:
                 str(row._mapping["status"]): int(row._mapping["count"])
                 for row in statuses
             },
+            "capped": bool(capped_data.get("capped")),
+            "latest_version": latest_release.get("version"),
+            "topics": topics,
             "latest_sync_run": latest_sync_run,
         }
 

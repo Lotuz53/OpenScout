@@ -10,7 +10,7 @@ import reducer, { initialState } from './intelligenceSlice';
 import type { IntelligenceOverview as OverviewData } from './types';
 
 const cappedOverview: OverviewData = {
-  projects: 3,
+  projects: 7,
   records: 3012,
   counts: {
     documentation: 30,
@@ -25,6 +25,17 @@ const cappedOverview: OverviewData = {
   last_synced_at: '2026-09-14T08:00:00Z',
   statuses: { ready: 2, partial: 1 },
   capped: true,
+  latest_version: 'v1.2.3',
+  topics: [
+    {
+      cluster_id: 'topic-1',
+      label: 'SSO',
+      repository: 'o/r',
+      month: '2026-01',
+      count: 4,
+      snapshot_id: 'snapshot-1',
+    },
+  ],
 };
 
 const partialRunOverview: OverviewData = {
@@ -87,6 +98,9 @@ describe('intelligence overview', () => {
     expect(html).toContain('文档');
     expect(html).toContain('Issue');
     expect(html).toContain('Release');
+    expect(html).toContain('v1.2.3');
+    expect(html).toContain('SSO');
+    expect(html).toContain('0 / 7');
   });
 
   it('shows a partial synchronization warning', () => {

@@ -394,7 +394,8 @@ export default function IntelligenceOverview() {
                 <h2 className="mt-2 text-xl font-semibold">已接入产品</h2>
               </div>
               <span className="text-muted-foreground font-mono text-xs">
-                {formatNumber(projects.length)} / 03
+                {formatNumber(projects.length)} /{' '}
+                {formatNumber(overview.projects)}
               </span>
             </div>
             {projectsStatus === 'loading' && projects.length === 0 ? (
