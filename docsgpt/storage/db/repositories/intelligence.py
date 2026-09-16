@@ -3,14 +3,51 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import Connection, text
 
-from docsgpt.intelligence.schemas import IntelligenceRecord, SyncSummary
+from docsgpt.intelligence.analytics import (
+    ALLOWED_DIMENSIONS,
+    ALLOWED_METRICS,
+    ALLOWED_ORDERS,
+)
+from docsgpt.intelligence.schemas import IntelligenceRecord, QueryFilters, SyncSummary
 from docsgpt.storage.db.base_repository import row_to_dict
+
+
+_OCCURRED_AT_SQL = (
+    "COALESCE(r.published_at, r.created_at, r.updated_at, r.retrieved_at)"
+)
+_DIMENSION_SQL = {
+    "repository": ("r.repository", "r.repository", ""),
+    "source_type": ("r.source_type", "r.source_type", ""),
+    "label": (
+        "labels.label",
+        "labels.label",
+        "CROSS JOIN LATERAL jsonb_array_elements_text(r.labels) AS labels(label)",
+    ),
+    "month": (
+        f"to_char(date_trunc('month', {_OCCURRED_AT_SQL}), 'YYYY-MM')",
+        f"to_char(date_trunc('month', {_OCCURRED_AT_SQL}), 'YYYY-MM')",
+        "",
+    ),
+    "state": ("COALESCE(r.state, 'unknown')", "COALESCE(r.state, 'unknown')", ""),
+}
+_METRIC_SQL = {
+    "count": "COUNT(*)",
+    "median_comments": "percentile_cont(0.5) WITHIN GROUP (ORDER BY r.comments_count)",
+    "sum_reactions": "COALESCE(SUM(r.reactions_count), 0)",
+}
+_ORDER_SQL = {
+    "value_asc": "value ASC, dimension ASC",
+    "value_desc": "value DESC, dimension ASC",
+    "period_asc": "dimension ASC, value DESC",
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +104,7 @@ class IntelligenceRepository:
             },
         )
         return row_to_dict(result.fetchone())
+
 
     def get_project(self, project_id: str, user_id: str) -> dict[str, Any] | None:
         """Return a project only when it belongs to ``user_id``.
@@ -199,6 +237,171 @@ class IntelligenceRepository:
             "statuses": {
                 str(row._mapping["status"]): int(row._mapping["count"])
                 for row in statuses
+            },
+        }
+
+    def aggregate(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        query: Any,
+    ) -> dict[str, Any]:
+        """Run one owner-scoped aggregate using a fixed SQL whitelist.
+
+        Args:
+            user_id: Authenticated owner whose projects are in scope.
+            project_ids: Optional project UUIDs to narrow the owner scope.
+            query: Validated aggregate query with metric, dimension, order,
+                limit, and ``QueryFilters`` attributes.
+
+        Returns:
+            Aggregate rows, exact SQL coverage, and whether the row limit
+            truncated the grouped result.
+
+        Raises:
+            ValueError: If the aggregate selector or project id is invalid.
+        """
+        metric = str(query.metric)
+        dimension = str(query.dimension)
+        order = str(query.order)
+        if metric not in ALLOWED_METRICS:
+            raise ValueError(f"metric {metric!r} is not allowed")
+        if dimension not in ALLOWED_DIMENSIONS:
+            raise ValueError(f"dimension {dimension!r} is not allowed")
+        if order not in ALLOWED_ORDERS:
+            raise ValueError(f"order {order!r} is not allowed")
+
+        filters = getattr(query, "filters", QueryFilters())
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        params["aggregate_limit"] = max(1, min(100, int(query.limit)))
+        dimension_sql, group_sql, join_sql = _DIMENSION_SQL[dimension]
+        metric_sql = _METRIC_SQL[metric]
+        order_sql = _ORDER_SQL[order]
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT {dimension_sql} AS dimension,
+                       {metric_sql} AS value,
+                       COUNT(*) OVER () AS total_groups
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                {join_sql}
+                WHERE {' AND '.join(where)}
+                GROUP BY {group_sql}
+                ORDER BY {order_sql}
+                LIMIT :aggregate_limit
+                """
+            ),
+            params,
+        )
+        rows: list[dict[str, Any]] = []
+        total_groups = 0
+        for row in result.fetchall():
+            mapping = row._mapping
+            total_groups = max(total_groups, int(mapping.get("total_groups") or 0))
+            rows.append(
+                {
+                    "dimension": mapping.get("dimension"),
+                    "value": mapping.get("value"),
+                }
+            )
+
+        return {
+            "rows": rows,
+            "coverage": self._aggregate_coverage(user_id, project_ids, filters),
+            "capped": total_groups > params["aggregate_limit"],
+        }
+
+    def representative_evidence(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        query: Any,
+        limit: int = 5,
+    ) -> list[dict[str, Any]]:
+        """Return owner-scoped evidence after an aggregate has been computed.
+
+        Args:
+            user_id: Authenticated owner whose projects are in scope.
+            project_ids: Optional project UUIDs to narrow the owner scope.
+            query: Aggregate query carrying the same metadata filters.
+            limit: Maximum number of representative records.
+
+        Returns:
+            Evidence-shaped rows ordered by deterministic community signal.
+        """
+        filters = getattr(query, "filters", QueryFilters())
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        params["representative_limit"] = max(1, min(100, int(limit)))
+        occurred_at_sql = _OCCURRED_AT_SQL
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT r.id::text AS id,
+                       r.id::text AS record_id,
+                       r.repository,
+                       r.source_type,
+                       r.title,
+                       LEFT(r.body, 500) AS excerpt,
+                       r.source_url,
+                       {occurred_at_sql} AS occurred_at
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE {' AND '.join(where)}
+                ORDER BY r.comments_count DESC,
+                         r.reactions_count DESC,
+                         {occurred_at_sql} DESC NULLS LAST,
+                         r.id::text ASC
+                LIMIT :representative_limit
+                """
+            ),
+            params,
+        )
+        return [
+            {
+                key: value
+                for key, value in row_to_dict(row).items()
+                if key != "_id"
+            }
+            for row in result.fetchall()
+        ]
+
+    def _aggregate_coverage(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        filters: QueryFilters,
+    ) -> dict[str, Any]:
+        """Compute coverage counts from the same owner-scoped SQL predicate."""
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT array_agg(DISTINCT r.repository ORDER BY r.repository) AS repositories,
+                       MIN({_OCCURRED_AT_SQL})::date AS date_from,
+                       MAX({_OCCURRED_AT_SQL})::date AS date_to,
+                       COUNT(*) FILTER (WHERE r.source_type = 'documentation') AS documentation_count,
+                       COUNT(*) FILTER (WHERE r.source_type = 'issue') AS issue_count,
+                       COUNT(*) FILTER (WHERE r.source_type = 'issue_comment') AS issue_comment_count,
+                       COUNT(*) FILTER (WHERE r.source_type = 'release') AS release_count
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE {' AND '.join(where)}
+                """
+            ),
+            params,
+        )
+        row = result.fetchone()
+        mapping = row._mapping if row is not None else {}
+        return {
+            "repositories": list(mapping.get("repositories") or []),
+            "date_from": mapping.get("date_from"),
+            "date_to": mapping.get("date_to"),
+            "counts": {
+                "documentation": int(mapping.get("documentation_count") or 0),
+                "issue": int(mapping.get("issue_count") or 0),
+                "issue_comment": int(mapping.get("issue_comment_count") or 0),
+                "release": int(mapping.get("release_count") or 0),
             },
         }
 
@@ -342,3 +545,60 @@ class IntelligenceRepository:
             },
         )
         return row_to_dict(result.fetchone())
+
+
+def _analytics_scope(
+    user_id: str,
+    project_ids: Sequence[str],
+    filters: QueryFilters,
+) -> tuple[list[str], dict[str, Any]]:
+    """Build a parameterized owner and metadata scope for analytics SQL."""
+    where = ["p.user_id = :user_id"]
+    params: dict[str, Any] = {"user_id": user_id}
+
+    project_parameters: list[str] = []
+    for index, project_id in enumerate(project_ids or []):
+        try:
+            normalized_project_id = str(UUID(str(project_id)))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError("project_ids must contain UUIDs") from exc
+        parameter = f"project_id_{index}"
+        params[parameter] = normalized_project_id
+        project_parameters.append(f"CAST(:{parameter} AS uuid)")
+    if project_parameters:
+        where.append(f"p.id IN ({', '.join(project_parameters)})")
+
+    repositories = list(filters.repositories or [])
+    if repositories:
+        placeholders = _bind_values(repositories, "repository", params)
+        where.append(f"r.repository IN ({placeholders})")
+
+    source_types = [
+        getattr(source_type, "value", str(source_type))
+        for source_type in (filters.source_types or [])
+    ]
+    if source_types:
+        placeholders = _bind_values(source_types, "source_type", params)
+        where.append(f"r.source_type IN ({placeholders})")
+
+    if filters.date_from is not None:
+        params["date_from"] = filters.date_from
+        where.append(f"{_OCCURRED_AT_SQL}::date >= :date_from")
+    if filters.date_to is not None:
+        params["date_to"] = filters.date_to
+        where.append(f"{_OCCURRED_AT_SQL}::date <= :date_to")
+    return where, params
+
+
+def _bind_values(
+    values: Sequence[Any],
+    prefix: str,
+    params: dict[str, Any],
+) -> str:
+    """Bind a list without interpolating user values into SQL text."""
+    placeholders: list[str] = []
+    for index, value in enumerate(values):
+        parameter = f"{prefix}_{index}"
+        params[parameter] = value
+        placeholders.append(f":{parameter}")
+    return ", ".join(placeholders)

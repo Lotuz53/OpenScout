@@ -8,11 +8,13 @@ from collections.abc import Callable, Mapping, Sequence
 from inspect import Parameter, signature
 from typing import Any
 
+from docsgpt.intelligence.analytics import AggregateQuery, AggregateResult
 from docsgpt.intelligence.filters import (
     compile_metadata_filter,
     filter_provenance,
     merge_filters,
 )
+from docsgpt.intelligence.query_router import QueryRouter, RouteDecision
 from docsgpt.intelligence.reranker import NoOpReranker, Reranker, safe_rerank
 from docsgpt.intelligence.schemas import (
     Claim,
@@ -107,6 +109,58 @@ def _coerce_generated(value: Any) -> tuple[str, list[Claim]]:
     return answer or NO_EVIDENCE_ANSWER, claims
 
 
+def _aggregate_query(
+    question: str,
+    filters: QueryFilters,
+    user_id: str,
+) -> AggregateQuery:
+    """Translate an aggregate question into a safe SQL query shape."""
+    normalized = question.casefold()
+    metric = "count"
+    if "median" in normalized or "中位" in normalized:
+        metric = "median_comments"
+    elif "reaction" in normalized or "点赞" in normalized:
+        metric = "sum_reactions"
+
+    dimension = "repository"
+    if "source" in normalized or "来源" in normalized or "类型" in normalized:
+        dimension = "source_type"
+    elif "label" in normalized or "标签" in normalized:
+        dimension = "label"
+    elif "month" in normalized or "月" in normalized or "趋势" in normalized:
+        dimension = "month"
+    elif "state" in normalized or "状态" in normalized:
+        dimension = "state"
+    return AggregateQuery(
+        metric=metric,
+        dimension=dimension,
+        user_id=user_id,
+        filters=filters,
+    )
+
+
+def _format_aggregate_result(result: AggregateResult) -> str:
+    """Render SQL values into the answer without asking an LLM to count."""
+    if not result.rows:
+        summary = "SQL统计结果：当前范围内没有符合条件的数据。"
+    else:
+        values = "; ".join(
+            f"{row.dimension}={_format_aggregate_value(row.value)}"
+            for row in result.rows
+        )
+        summary = (
+            f"SQL统计结果（{result.metric}，按{result.dimension}）：{values}"
+        )
+    return summary
+
+
+def _format_aggregate_value(value: int | float) -> str:
+    """Format aggregate numbers without introducing presentation rounding."""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
 def enforce_citations(
     *,
     claims: Sequence[Claim],
@@ -141,6 +195,8 @@ class QueryService:
         coverage: Callable[..., Coverage] | Coverage | None = None,
         reranker: Reranker | None = None,
         filter_inferer: Callable[[str], QueryFilters | Mapping[str, Any]] | None = None,
+        router: QueryRouter | None = None,
+        analytics: Any | None = None,
     ) -> None:
         """Initialize the service with injectable retrieval dependencies.
 
@@ -153,12 +209,18 @@ class QueryService:
             reranker: Optional provider-neutral reranker. When omitted, the
                 Hybrid order is preserved.
             filter_inferer: Optional parser for implicit question filters.
+            router: Optional constrained intent router. When omitted, the
+                original factual Hybrid path is preserved.
+            analytics: Optional SQL-first aggregate service used by routed
+                aggregate questions.
         """
         self.retriever = retriever or _EmptyRetriever()
         self.generator = generator or _EvidenceOnlyGenerator()
         self.coverage = coverage or _empty_coverage
         self.reranker = reranker
         self.filter_inferer = filter_inferer
+        self.router = router
+        self.analytics = analytics
 
     def _infer_filters(self, question: str) -> QueryFilters:
         """Resolve implicit filters without blocking a query on parser errors."""
@@ -209,6 +271,28 @@ class QueryService:
             items = search(request.question)
         return _coerce_evidence(items or [])
 
+    def _run_analytics(
+        self,
+        route: RouteDecision | None,
+        request: QueryRequest,
+        filters: QueryFilters,
+        user_id: str,
+    ) -> AggregateResult | None:
+        """Run SQL analytics only when an aggregate route is explicitly active."""
+        if route is None or route.intent != QueryIntent.AGGREGATE:
+            return None
+        if self.analytics is None:
+            return None
+        run = getattr(self.analytics, "run", None)
+        if not callable(run):
+            raise TypeError("analytics must expose run")
+        result = run(_aggregate_query(request.question, filters, user_id))
+        return (
+            result
+            if isinstance(result, AggregateResult)
+            else AggregateResult.model_validate(result)
+        )
+
     def _coverage(self, filters: QueryFilters, user_id: str) -> Coverage:
         """Resolve coverage from a fixed value or injected callable."""
         if isinstance(self.coverage, Coverage):
@@ -232,9 +316,24 @@ class QueryService:
         """Retrieve evidence, generate claims, and return a traced result."""
         started = time.perf_counter()
         explicit_filters = request.filters
-        inferred_filters = self._infer_filters(request.question)
+        route = self.router.route(request) if self.router is not None else None
+        route_filters = route.filters if route is not None else QueryFilters()
+        inferred_filters = merge_filters(
+            route_filters,
+            self._infer_filters(request.question),
+        )
         effective_filters = merge_filters(explicit_filters, inferred_filters)
-        evidence = self._retrieve(request, effective_filters)
+        aggregate_result = self._run_analytics(
+            route,
+            request,
+            effective_filters,
+            user_id,
+        )
+        evidence = (
+            list(aggregate_result.evidence)
+            if aggregate_result is not None and aggregate_result.evidence
+            else self._retrieve(request, effective_filters)
+        )
         if self.reranker is not None:
             evidence = safe_rerank(
                 self.reranker,
@@ -244,7 +343,11 @@ class QueryService:
             )
         generated = self.generator.generate(request.question, evidence)
         answer, claims = _coerce_generated(generated)
-        coverage = self._coverage(effective_filters, user_id)
+        if aggregate_result is not None:
+            answer = f"{_format_aggregate_result(aggregate_result)}\n{answer}"
+            coverage = aggregate_result.coverage
+        else:
+            coverage = self._coverage(effective_filters, user_id)
         claims = enforce_citations(
             claims=claims,
             evidence=evidence,
@@ -257,13 +360,18 @@ class QueryService:
             coverage=coverage,
             latency_ms=max(0, int((time.perf_counter() - started) * 1000)),
             trace=RetrievalTrace(
-                intent=QueryIntent.FACTUAL,
+                intent=route.intent if route is not None else QueryIntent.FACTUAL,
                 strategy=(
-                    RetrievalStrategy.HYBRID_RERANK
-                    if self.reranker is not None
-                    and not isinstance(self.reranker, NoOpReranker)
-                    else RetrievalStrategy.HYBRID
+                    route.strategy
+                    if route is not None
+                    else (
+                        RetrievalStrategy.HYBRID_RERANK
+                        if self.reranker is not None
+                        and not isinstance(self.reranker, NoOpReranker)
+                        else RetrievalStrategy.HYBRID
+                    )
                 ),
+                fallback_reason=route.fallback_reason if route is not None else None,
                 applied_filters=effective_filters,
                 explicit_filters=explicit_filters,
                 inferred_filters=inferred_filters,

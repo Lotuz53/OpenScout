@@ -220,6 +220,16 @@ class RetrievalTrace(IntelligenceModel):
     filter_sources: list[FilterSource] = Field(default_factory=list)
 
 
+class RouteDecision(IntelligenceModel):
+    """Validated intent, strategy, confidence, and route-level filters."""
+
+    intent: QueryIntent
+    strategy: RetrievalStrategy
+    confidence: float = Field(ge=0.0, le=1.0)
+    filters: QueryFilters = Field(default_factory=QueryFilters)
+    fallback_reason: str | None = None
+
+
 class QueryResult(IntelligenceModel):
     """A complete evidence-backed query response."""
 

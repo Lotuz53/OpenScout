@@ -857,6 +857,7 @@ git commit -m "feat(openscout): filter and rerank retrieved evidence"
 **文件：**
 - 新建： `docsgpt/intelligence/query_router.py`
 - 新建： `docsgpt/intelligence/analytics.py`
+- 修改： `docsgpt/intelligence/schemas.py`
 - 修改： `docsgpt/storage/db/repositories/intelligence.py`
 - 修改： `docsgpt/intelligence/query_service.py`
 - 新建： `tests/intelligence/test_query_router.py`
@@ -866,7 +867,7 @@ git commit -m "feat(openscout): filter and rerank retrieved evidence"
 - 输入：`QueryRequest` 和按所有者隔离的项目 id。
 - 输出：`RouteDecision(intent, strategy, confidence, filters)`、`QueryRouter.route(request)` 和 `AnalyticsService.run(AggregateQuery) -> AggregateResult`。
 
-- [ ] **步骤 1：编写路由和 SQL 白名单测试**
+- [x] **步骤 1：编写路由和 SQL 白名单测试**
 
 ```python
 def test_low_confidence_route_falls_back_to_hybrid() -> None:
@@ -879,21 +880,21 @@ def test_analytics_rejects_unknown_dimension() -> None:
         AnalyticsService(repo).run(AggregateQuery(metric="count", dimension="body"))
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_query_router.py tests/intelligence/test_analytics.py -q`
 
 预期：FAIL，提示缺少路由器和统计服务。
 
-- [ ] **步骤 3：实现受约束的路由解析**
+- [x] **步骤 3：实现受约束的路由解析**
 
 模型或解析器输出必须通过 `RouteDecision` 校验；允许的策略只有 `hybrid`、`hybrid_rerank`、`sql_plus_hybrid`、`split_hybrid` 和 `graphrag`。校验失败或置信度 `< 0.65` 时使用 `hybrid`，并记录 `fallback_reason`。
 
-- [ ] **步骤 4：实现白名单聚合统计**
+- [x] **步骤 4：实现白名单聚合统计**
 
 允许的指标为 `count`、`median_comments`、`sum_reactions`；维度为 `repository`、`source_type`、`label`、`month`、`state`；排序为 `value_asc`、`value_desc`、`period_asc`。结果必须同时返回 `coverage` 和 `capped`。SQL 统计后再检索代表性证据，不得让 LLM 统计行数。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_query_router.py tests/intelligence/test_analytics.py tests/intelligence/test_query_service.py -q`
 
