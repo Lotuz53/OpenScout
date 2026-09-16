@@ -639,6 +639,15 @@ def setup_periodic_tasks(sender, **kwargs):
         reap_stale_workflow_runs.s(),
         name="reap-stale-workflow-runs",
     )
+    # OpenScout project syncs share the existing RedBeat scheduler and task
+    # queue. The task derives a stable UTC day slot for idempotent dispatch.
+    from docsgpt.intelligence.tasks import dispatch_intelligence_syncs
+
+    sender.add_periodic_task(
+        timedelta(days=1),
+        dispatch_intelligence_syncs.s(),
+        name="intelligence-sync-daily",
+    )
 
 
 # Bound time limits so a hung OAuth discovery (user never finishes the

@@ -67,8 +67,18 @@ def sync_intelligence_project(
     return summary.model_dump(mode="json")
 
 
+@celery.task(bind=True, acks_late=False)
+def dispatch_intelligence_syncs(self: Any, scheduled_at: Any = None) -> dict[str, int]:
+    """Dispatch the daily OpenScout project sweep through the shared scheduler."""
+    del self
+    from docsgpt.api.user.scheduler_dispatcher import dispatch_daily_intelligence_syncs
+
+    return dispatch_daily_intelligence_syncs(scheduled_at=scheduled_at)
+
+
 __all__ = [
     "build_sync_service",
+    "dispatch_intelligence_syncs",
     "extract_intelligence_graph",
     "sync_intelligence_project",
 ]

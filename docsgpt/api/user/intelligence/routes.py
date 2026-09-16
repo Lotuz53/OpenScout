@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from flask import jsonify, make_response, request
@@ -21,13 +21,16 @@ from docsgpt.intelligence.report_service import (
     ReportService,
 )
 from docsgpt.intelligence.schemas import QueryFilters, QueryRequest
-from docsgpt.intelligence.tasks import sync_intelligence_project
 from docsgpt.intelligence.topics import topic_trends
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly, db_session
 
 logger = logging.getLogger(__name__)
+
+# Resolved lazily because the task module imports the shared idempotency
+# decorator, which loads the user API package during Celery autodiscovery.
+sync_intelligence_project: Any | None = None
 
 intelligence_ns = Namespace(
     "intelligence",
@@ -53,6 +56,16 @@ def _current_user() -> str | None:
         return None
     subject = decoded.get("sub")
     return str(subject) if subject else None
+
+
+def _sync_task() -> Any:
+    """Return the Celery sync task while preserving test/application patches."""
+    global sync_intelligence_project
+    if sync_intelligence_project is None:
+        from docsgpt.intelligence.tasks import sync_intelligence_project as task
+
+        sync_intelligence_project = task
+    return sync_intelligence_project
 
 
 def _json_row(row: dict[str, Any] | None) -> dict[str, Any]:
@@ -303,9 +316,13 @@ class IntelligenceProjectSync(Resource):
 
         payload = request.get_json(silent=True)
         payload_key = payload.get("idempotency_key") if isinstance(payload, dict) else None
-        idempotency_key = request.headers.get("Idempotency-Key") or payload_key
+        idempotency_key = (
+            request.headers.get("Idempotency-Key")
+            or payload_key
+            or f"openscout-sync:{project_id}:{datetime.now(timezone.utc).isoformat()}"
+        )
         try:
-            task = sync_intelligence_project.delay(
+            task = _sync_task().delay(
                 project_id=project_id,
                 user_id=user_id,
                 idempotency_key=idempotency_key,

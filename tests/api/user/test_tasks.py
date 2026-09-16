@@ -299,7 +299,7 @@ class TestSetupPeriodicTasks:
 
         setup_periodic_tasks(sender)
 
-        assert sender.add_periodic_task.call_count == 14
+        assert sender.add_periodic_task.call_count == 15
 
         calls = sender.add_periodic_task.call_args_list
 
@@ -340,6 +340,9 @@ class TestSetupPeriodicTasks:
         # stale workflow-run reaper (5m)
         assert calls[13][0][0] == timedelta(seconds=300)
         assert calls[13][1].get("name") == "reap-stale-workflow-runs"
+        # OpenScout daily intelligence sync
+        assert calls[14][0][0] == timedelta(days=1)
+        assert calls[14][1].get("name") == "intelligence-sync-daily"
 
 
 class TestMcpOauthTask:

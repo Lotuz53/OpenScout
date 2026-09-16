@@ -1,3 +1,5 @@
+import '@testing-library/jest-dom/vitest';
+
 // happy-dom's localStorage lives on `window`; slices read the bare
 // global at module-load. Install a Map-backed shim on globalThis.
 const store = new Map<string, string>();

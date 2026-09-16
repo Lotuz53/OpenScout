@@ -396,6 +396,35 @@ def test_sync_dispatches_owner_scoped_task(client, auth_headers, monkeypatch) ->
     )
 
 
+def test_sync_generates_project_scoped_key_when_missing(
+    client, auth_headers, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    repository.get_project.return_value = {
+        "id": project_id,
+        "user_id": "user-1",
+        "repository": "langgenius/dify",
+    }
+    _patch_repository(monkeypatch, repository)
+    task = MagicMock(id="task-2")
+    sync_task = MagicMock()
+    sync_task.delay.return_value = task
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.sync_intelligence_project", sync_task
+    )
+
+    response = client.post(
+        f"/api/intelligence/projects/{project_id}/sync",
+        headers=auth_headers,
+        json={},
+    )
+
+    assert response.status_code == 202
+    dispatched_key = sync_task.delay.call_args.kwargs["idempotency_key"]
+    assert dispatched_key.startswith(f"openscout-sync:{project_id}:")
+
+
 def test_sync_run_and_overview_are_owner_scoped(
     client, auth_headers, monkeypatch
 ) -> None:

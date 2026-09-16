@@ -11,6 +11,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import text
+
 from docsgpt.agents.scheduler_utils import next_cron_run
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.engine import get_engine
@@ -20,6 +22,13 @@ from docsgpt.storage.db.repositories.schedule_runs import (
 from docsgpt.storage.db.repositories.schedules import SchedulesRepository
 
 logger = logging.getLogger(__name__)
+
+
+def _sync_task():
+    """Resolve the OpenScout synchronization task without importing it eagerly."""
+    from docsgpt.intelligence.tasks import sync_intelligence_project
+
+    return sync_intelligence_project
 
 
 def _normalize_dt(value: Any) -> Optional[datetime]:
@@ -55,6 +64,123 @@ def _compute_next(
     if end_at is not None and candidate > end_at:
         return None
     return candidate
+
+
+class IntelligenceSyncDispatcher:
+    """Dispatch owner-scoped OpenScout syncs for a stable schedule slot."""
+
+    def __init__(self, sync_task: Any | None = None, user_id: str | None = None) -> None:
+        """Initialize a dispatcher.
+
+        Args:
+            sync_task: Celery task-like object. When omitted, the production
+                task is resolved lazily to avoid an import cycle.
+            user_id: Default owner used by :meth:`dispatch`.
+        """
+        self._sync_task = sync_task
+        self._user_id = user_id
+
+    def dispatch(
+        self,
+        project_id: str,
+        *,
+        scheduled_at: datetime,
+        user_id: str | None = None,
+    ) -> Any:
+        """Queue one project sync with a project-and-slot idempotency key.
+
+        Args:
+            project_id: UUID of the project to synchronize.
+            scheduled_at: The logical schedule slot, normalized to UTC.
+            user_id: Optional owner override for this dispatch.
+
+        Returns:
+            The result returned by Celery's ``apply_async``.
+
+        Raises:
+            ValueError: If the schedule slot or owner is missing/invalid.
+        """
+        normalized_at = _normalize_dt(scheduled_at)
+        if normalized_at is None:
+            raise ValueError("scheduled_at must be a valid datetime")
+        target_user = user_id or self._user_id
+        if not target_user:
+            raise ValueError("user_id is required for an intelligence sync")
+
+        task = self._sync_task or _sync_task()
+        idempotency_key = f"openscout-sync:{project_id}:{normalized_at.isoformat()}"
+        return task.apply_async(
+            kwargs={
+                "project_id": str(project_id),
+                "user_id": str(target_user),
+                "idempotency_key": idempotency_key,
+            },
+            queue="docsgpt",
+        )
+
+
+# Keep the domain name discoverable for callers that describe the operation as
+# an OpenScout sync rather than an intelligence sync.
+OpenScoutSyncDispatcher = IntelligenceSyncDispatcher
+
+
+def _daily_slot(value: datetime | str | None) -> datetime:
+    """Return a UTC logical slot, stable for every dispatch on one day."""
+    normalized = _normalize_dt(value) if value is not None else None
+    if value is not None and normalized is None:
+        raise ValueError("scheduled_at must be a valid datetime")
+    now = normalized or datetime.now(timezone.utc)
+    if value is not None:
+        return now
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def dispatch_daily_intelligence_syncs(
+    *,
+    scheduled_at: datetime | str | None = None,
+) -> Dict[str, int]:
+    """Dispatch one daily sync for every persisted OpenScout project.
+
+    RedBeat invokes the caller once per day. The logical UTC day is included
+    in every project's idempotency key, so a repeated beat tick cannot execute
+    the same project slot twice.
+    """
+    if not settings.POSTGRES_URI:
+        return {"dispatched": 0, "skipped": 0}
+
+    from docsgpt.storage.db.session import db_readonly
+
+    with db_readonly() as conn:
+        result = conn.execute(
+            text(
+                """
+                SELECT id::text AS project_id, user_id
+                FROM intelligence_projects
+                ORDER BY created_at ASC, id ASC
+                """
+            )
+        )
+        projects = result.mappings().all()
+
+    slot = _daily_slot(scheduled_at)
+    dispatcher = IntelligenceSyncDispatcher()
+    counts = {"dispatched": 0, "skipped": 0}
+    for project in projects:
+        try:
+            dispatcher.dispatch(
+                str(project["project_id"]),
+                user_id=str(project["user_id"]),
+                scheduled_at=slot,
+            )
+        except Exception:  # noqa: BLE001 - one project must not block the daily sweep
+            logger.exception(
+                "Could not dispatch daily intelligence sync for project %s",
+                project.get("project_id"),
+            )
+            counts["skipped"] += 1
+        else:
+            counts["dispatched"] += 1
+    return counts
 
 
 def dispatch_due_runs() -> Dict[str, int]:

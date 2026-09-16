@@ -152,7 +152,7 @@ git commit -m "feat(openscout): add audited incremental synchronization"
 - 输入：现有 Celery/RedBeat 调度能力和 `sync_intelligence_project`。
 - 输出：手动/每日调度契约、幂等分发键 `openscout-sync:{project_id}:{scheduled_at}`，以及带重试操作的可见运行状态。
 
-- [ ] **步骤 1：编写调度与状态测试**
+- [x] **步骤 1：编写调度与状态测试**
 
 ```python
 def test_daily_dispatch_uses_project_scoped_idempotency_key(dispatcher) -> None:
@@ -169,7 +169,7 @@ it('shows partial counts and a retry action', () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_sync_schedule.py -q`
 
@@ -177,15 +177,15 @@ it('shows partial counts and a retry action', () => {
 
 预期：两组测试均失败，因为调度和状态组件尚不存在。
 
-- [ ] **步骤 3：复用 RedBeat，不引入第二套调度器**
+- [x] **步骤 3：复用 RedBeat，不引入第二套调度器**
 
 将项目每日同步计划映射到现有调度分发器，分发现有同步任务，并保留有界重试。手动接口使用同一任务和按请求生成的幂等键。
 
-- [ ] **步骤 4：展示透明的同步状态**
+- [x] **步骤 4：展示透明的同步状态**
 
 展示排队中、运行中、完成、部分完成和失败状态，以及按来源类型统计的对象数、实际覆盖范围、上限标记、最近成功时间、错误类别和重试操作。不得显示原始异常字符串或 token。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_sync_schedule.py tests/api/user/intelligence/test_routes.py -q`
 

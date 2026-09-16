@@ -9,15 +9,18 @@ import {
   PackageCheck,
   Plus,
   Radar,
+  RefreshCw,
 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 
 import { Button } from '../components/ui/button';
 import Spinner from '../components/Spinner';
+import { cn } from '../lib/utils';
 import { selectToken } from '../preferences/preferenceSlice';
 import { type AppDispatch } from '../store';
+import intelligenceService from './intelligenceService';
 import {
   loadOverview,
   loadProjects,
@@ -31,6 +34,7 @@ import type {
   SourceType,
   TopicTrend,
 } from './types';
+import SyncStatus, { type SyncRun, type SyncRunStatus } from './SyncStatus';
 
 const SOURCE_CARDS: {
   key: SourceType;
@@ -103,6 +107,35 @@ function statusClass(status: IntelligenceProject['status']): string {
   }[status];
 }
 
+function overviewRunStatus(overview: OverviewData): SyncRunStatus {
+  if ((overview.statuses.failed ?? 0) > 0) return 'failed';
+  if ((overview.statuses.partial ?? 0) > 0) return 'partial';
+  if ((overview.statuses.syncing ?? 0) > 0) return 'running';
+  if (overview.last_synced_at) return 'complete';
+  return 'queued';
+}
+
+function buildOverviewRun(
+  overview: OverviewData,
+  projects: IntelligenceProject[],
+): SyncRun {
+  return {
+    id: 'overview',
+    status: overviewRunStatus(overview),
+    counts: overview.counts,
+    failures: [],
+    coverage: {
+      repositories: projects.map((project) => project.repository),
+      date_from: overview.coverage.date_from,
+      date_to: overview.coverage.date_to,
+      capped: overview.capped === true || overview.coverage.capped === true,
+      last_synced_at: overview.last_synced_at,
+    },
+    started_at: null,
+    finished_at: overview.last_synced_at,
+  };
+}
+
 function TopicSignal({ topic }: { topic: TopicTrend }) {
   return (
     <li className="flex items-center justify-between gap-3 border-b border-dashed border-black/10 py-3 last:border-0 dark:border-white/10">
@@ -124,6 +157,8 @@ function TopicSignal({ topic }: { topic: TopicTrend }) {
 export default function IntelligenceOverview() {
   const dispatch = useDispatch<AppDispatch>();
   const token = useSelector(selectToken);
+  const [syncingProjectId, setSyncingProjectId] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const { overviewStatus, projectsStatus, error } =
     useSelector(selectIntelligence);
   const overview = useSelector(selectIntelligenceOverview);
@@ -190,6 +225,21 @@ export default function IntelligenceOverview() {
     projects.find((project) => project.latest_version)?.latest_version ??
     '尚未同步';
   const topics = overview.topics?.slice(0, 5) ?? [];
+  const overviewRun = buildOverviewRun(overview, projects);
+
+  const handleSync = async (projectId: string) => {
+    if (syncingProjectId) return;
+    setSyncError(null);
+    setSyncingProjectId(projectId);
+    try {
+      await intelligenceService.syncProject(projectId, token);
+      await Promise.all([dispatch(loadProjects()), dispatch(loadOverview())]);
+    } catch {
+      setSyncError('同步任务暂时无法排队，请稍后重试。');
+    } finally {
+      setSyncingProjectId(null);
+    }
+  };
 
   return (
     <div className="min-h-full bg-[#f6f4ed] px-5 py-8 text-[#20241f] md:px-10 md:py-10 lg:px-14 dark:bg-[#111511] dark:text-[#f2f3e9]">
@@ -239,6 +289,15 @@ export default function IntelligenceOverview() {
             <p>部分项目尚未完成同步，当前概览不代表完整覆盖。</p>
           </div>
         )}
+        {syncError && (
+          <div className="mt-3 rounded-xl border border-red-300/80 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-700/60 dark:bg-red-950/30 dark:text-red-100">
+            {syncError}
+          </div>
+        )}
+
+        <section className="mt-8" aria-label="同步状态">
+          <SyncStatus run={overviewRun} />
+        </section>
 
         <section
           className="mt-8 grid gap-3 sm:grid-cols-3"
@@ -352,11 +411,37 @@ export default function IntelligenceOverview() {
                         {project.window_start} → {project.window_end}
                       </p>
                     </div>
-                    <span
-                      className={`w-fit rounded-full px-2.5 py-1 font-mono text-[11px] ${statusClass(project.status)}`}
-                    >
-                      {statusLabel(project.status)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-fit rounded-full px-2.5 py-1 font-mono text-[11px] ${statusClass(project.status)}`}
+                      >
+                        {syncingProjectId === project.id
+                          ? '已排队'
+                          : statusLabel(project.status)}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => void handleSync(project.id)}
+                        disabled={
+                          Boolean(syncingProjectId) ||
+                          project.status === 'syncing'
+                        }
+                        aria-label={`${project.status === 'partial' || project.status === 'failed' ? '重试' : '同步'} ${project.repository}`}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            'size-4',
+                            syncingProjectId === project.id && 'animate-spin',
+                          )}
+                        />
+                        {project.status === 'partial' ||
+                        project.status === 'failed'
+                          ? '重试同步'
+                          : '立即同步'}
+                      </Button>
+                    </div>
                   </li>
                 ))}
               </ul>
