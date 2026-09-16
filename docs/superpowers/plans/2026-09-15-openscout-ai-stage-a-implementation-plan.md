@@ -1132,6 +1132,8 @@ def test_export_retry_does_not_rerun_query(report_service, query_service) -> Non
 
 Markdown 使用 UTF-8 附件响应；PDF 使用 ReportLab 和存放在合规资源目录中的内嵌中日韩字体，或复用项目现有字体。导出失败时保留报告记录，返回可重试的 500，且不得重新执行查询。当前代码支持 `OPENSCOUT_CJK_FONT`、约定的包内字体路径和运行环境字体，并以 `STSong-Light` 回退；仓库尚无经过许可的可分发 CJK 字体资产，因此该部署条件仍待补齐。
 
+> 后续缺陷修复（2026-09-17）：报告文档现在保留首个查询结果的 `Coverage`，旧报告缺少该字段时回退为空覆盖结构；只读分享投影因此能显示日期范围、仓库和上限状态。报告服务回归测试通过，隔离实测分享页不再显示“覆盖范围未记录”。
+
 - [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_report_service.py tests/api/user/intelligence/test_routes.py -q`

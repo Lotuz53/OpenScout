@@ -137,6 +137,10 @@ def test_create_persists_all_fixed_sections(query_result: QueryResult) -> None:
         REPORT_SECTION_HEADINGS
     )
     assert report_data["source_ids"] == ["evidence-1"]
+    assert report_data["coverage"]["repositories"] == ["langgenius/dify"]
+    assert report_data["coverage"]["date_from"] == "2025-09-14"
+    assert report_data["coverage"]["date_to"] == "2026-09-14"
+    assert report_data["coverage"]["counts"] == {"release": 1}
 
 
 def test_create_rejects_unvalidated_result_mapping() -> None:

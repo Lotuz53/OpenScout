@@ -14,7 +14,12 @@ from xml.sax.saxutils import escape
 from pydantic import Field, ValidationError, model_validator
 
 from docsgpt.intelligence.comparison import ComparisonResult
-from docsgpt.intelligence.schemas import IntelligenceModel, QueryResult
+from docsgpt.intelligence.schemas import (
+    Coverage,
+    IntelligenceModel,
+    QueryResult,
+    SourceType,
+)
 
 
 REPORT_SECTION_HEADINGS = (
@@ -46,6 +51,16 @@ class ReportSource(IntelligenceModel):
     excerpt: str = ""
 
 
+def _empty_report_coverage() -> Coverage:
+    """Return a safe empty coverage value for legacy reports."""
+    return Coverage(
+        repositories=[],
+        date_from=None,
+        date_to=None,
+        counts={source_type: 0 for source_type in SourceType},
+    )
+
+
 class ReportDocument(IntelligenceModel):
     """The immutable structured document used by every report renderer."""
 
@@ -54,6 +69,7 @@ class ReportDocument(IntelligenceModel):
     project_ids: list[str]
     sections: list[ReportSection]
     sources: list[ReportSource]
+    coverage: Coverage = Field(default_factory=_empty_report_coverage)
     id: str | None = None
     source_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -387,8 +403,22 @@ def _build_report_document(
         project_ids=project_ids,
         sections=sections,
         sources=sources,
+        coverage=_coverage_for_views(views),
         source_ids=[source.id for source in sources],
     )
+
+
+def _coverage_for_views(views: Sequence[Mapping[str, Any]]) -> Coverage:
+    """Preserve the first validated query coverage in a saved report."""
+    for view in views:
+        raw_coverage = view.get("coverage")
+        if not isinstance(raw_coverage, Mapping):
+            continue
+        try:
+            return Coverage.model_validate(raw_coverage)
+        except ValidationError:
+            continue
+    return _empty_report_coverage()
 
 
 def _append_result_details(
