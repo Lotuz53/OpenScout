@@ -738,7 +738,7 @@ git commit -m "feat(openscout): expose intelligence project and query APIs"
 - 输入：兼容 `POST /api/intelligence/query` 的查询执行器和固定快照 id。
 - 输出：`recall_at_k(expected: Sequence[str], retrieved: Sequence[str], k: int) -> float`、`ndcg_at_k(expected: Sequence[str], retrieved: Sequence[str], k: int) -> float`、`citation_precision(cited: Sequence[str], expected: Sequence[str]) -> float`、JSONL 运行记录和 Markdown 对比摘要。
 
-- [ ] **步骤 1：使用人工计算值编写指标测试**
+- [x] **步骤 1：使用人工计算值编写指标测试**
 
 ```python
 def test_recall_at_five() -> None:
@@ -753,21 +753,21 @@ def test_citation_precision() -> None:
     assert citation_precision(["a", "x"], ["a", "b"]) == 0.5
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/evaluation/test_metrics.py -q`
 
 预期：FAIL，提示缺少 `evaluation.metrics`。
 
-- [ ] **步骤 3：实现确定性指标和运行记录结构**
+- [x] **步骤 3：实现确定性指标和运行记录结构**
 
 每条 JSONL 结果包含 `run_id`、`snapshot_id`、配置哈希、问题 id/类型、预期 URL、召回 URL/排名、答案规则得分、引用得分、忠实度得分、延迟毫秒数、输入/输出 token、模型和时间戳。
 
-- [ ] **步骤 4：创建 60 条人工审核开发题和 20 条封存题**
+- [x] **步骤 4：创建 60 条人工审核开发题和 20 条封存题**
 
 `factual`、`temporal`、`comparative` 和 `comprehensive` 四类问题各包含 15 条开发题和 5 条封存题；综合题额外标记 `aggregate` 或 `relational` 子类型。每行包含问题、标准答案要点、证据 URL、适用仓库、日期范围和验收规则。增加 `evaluation/dataset/README.md`，明确选择实验方案后不得修改封存答案。实现 `check_regression.py`：任一跟踪指标相对已提交基线下降超过 `0.05` 时返回非零退出码。
 
-- [ ] **步骤 5：运行向量和混合检索配置并提交实测输出**
+- [x] **步骤 5：运行向量和混合检索配置并提交实测输出**
 
 运行：`python evaluation/run_eval.py --config evaluation/configs/vector.yaml --split dev`
 

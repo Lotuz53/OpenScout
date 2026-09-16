@@ -1,0 +1,16 @@
+name: vector
+version: "1"
+snapshot_id: stage-a-2026-09-14
+dataset:
+  dev: evaluation/dataset/questions.dev.jsonl
+  holdout: evaluation/dataset/questions.holdout.jsonl
+executor:
+  type: fixture
+  corpus: tests/intelligence/fixtures/github_objects.json
+  strategy: vector
+  top_k: 10
+model:
+  provider: recorded_fixture
+  name: lexical-proxy-v1
+promotion:
+  default: false
