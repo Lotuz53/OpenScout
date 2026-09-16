@@ -1159,7 +1159,7 @@ git commit -m "feat(openscout): export evidence-backed intelligence reports"
 - 输入：任务 7 的 API 和精确 `QueryResult` JSON 字段。
 - 输出：Redux `intelligence` 状态、`/intelligence` 概览路由、`/intelligence/workbench` 路由、过滤控件和查询分发。
 
-- [ ] **步骤 1：编写 reducer 和可见状态测试**
+- [x] **步骤 1：编写 reducer 和可见状态测试**
 
 ```tsx
 it('shows capped coverage as a warning', async () => {
@@ -1176,27 +1176,29 @@ it('sends explicit filters with the question', async () => {
 });
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`cd frontend && npm test -- --run src/intelligence/intelligenceSlice.test.ts src/intelligence/Overview.test.tsx src/intelligence/Workbench.test.tsx`
 
 预期：FAIL，因为功能目录和路由尚不存在。
 
-- [ ] **步骤 3：实现 API 类型和 Redux 状态**
+- [x] **步骤 3：实现 API 类型和 Redux 状态**
 
 严格复用后端字段名；状态包含 `overview`、`filters`、`question`、`queryResult`、`requestStatus` 和 `error`。复用现有 API 基础配置和错误处理，在 `/api/intelligence` 下增加接口常量。
 
-- [ ] **步骤 4：实现概览和工作台状态**
+- [x] **步骤 4：实现概览和工作台状态**
 
 概览卡片展示文档/Issue/Release 数量、覆盖范围、最近同步、最新版本、主题和达到上限/部分完成警告。工作台提供仓库多选、日期范围、来源类型、问题类型和五个固定推荐问题，并包含加载、空数据、部分完成和错误文案。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`cd frontend && npm test -- --run src/intelligence`
 
 运行：`cd frontend && npm run lint`
 
 预期：测试 PASS，lint 退出码为 0。
+
+> 实际验证：`src/intelligence` 测试 6/6 通过，TypeScript 与生产构建通过；本 Task 新建文件及 App、endpoints、store 的 lint 通过。全仓库 lint 仍报告本 Task 之前已有的格式错误，未为此扩大修改范围。
 
 ```bash
 git add frontend/src/intelligence frontend/src/api/endpoints.ts frontend/src/store.ts frontend/src/App.tsx frontend/src/Navigation.tsx

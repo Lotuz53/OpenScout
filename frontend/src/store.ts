@@ -8,6 +8,7 @@ import {
   conversationSlice,
 } from './conversation/conversationSlice';
 import { sharedConversationSlice } from './conversation/sharedConversationSlice';
+import intelligenceReducer from './intelligence/intelligenceSlice';
 import notificationsReducer from './notifications/notificationsSlice';
 import { getStoredRecentDocs } from './preferences/preferenceApi';
 import {
@@ -71,6 +72,7 @@ const store = configureStore({
     schedules: schedulesReducer,
     teams: teamsReducer,
     graphBuild: graphBuildReducer,
+    intelligence: intelligenceReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(

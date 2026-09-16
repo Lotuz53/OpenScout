@@ -156,6 +156,24 @@ const endpoints = {
     DEVICE_PAIRING: (deviceCode: string) =>
       `/api/devices/pairings/${deviceCode}`,
   },
+  INTELLIGENCE: {
+    PROJECTS: '/api/intelligence/projects',
+    PROJECT: (id: string) =>
+      `/api/intelligence/projects/${encodeURIComponent(id)}`,
+    PROJECT_SYNC: (id: string) =>
+      `/api/intelligence/projects/${encodeURIComponent(id)}/sync`,
+    SYNC_RUN: (id: string) =>
+      `/api/intelligence/sync-runs/${encodeURIComponent(id)}`,
+    OVERVIEW: '/api/intelligence/overview',
+    QUERY: '/api/intelligence/query',
+    TOPICS: '/api/intelligence/topics',
+    COMPARISON: '/api/intelligence/comparison',
+    REPORTS: '/api/intelligence/reports',
+    REPORT: (id: string) =>
+      `/api/intelligence/reports/${encodeURIComponent(id)}`,
+    REPORT_DOWNLOAD: (id: string, format: 'markdown' | 'pdf') =>
+      `/api/intelligence/reports/${encodeURIComponent(id)}/download?format=${format}`,
+  },
   V1: {
     CHAT_COMPLETIONS: '/v1/chat/completions',
     MODELS: '/v1/models',

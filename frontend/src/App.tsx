@@ -8,6 +8,8 @@ import { Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import Admin from './admin';
 import Agents from './agents';
 import SharedAgentGate from './agents/SharedAgentGate';
+import IntelligenceOverview from './intelligence/Overview';
+import IntelligenceWorkbench from './intelligence/Workbench';
 import DocsGPT3 from './assets/cute_docsgpt3.svg';
 import ActionButtons from './components/ActionButtons';
 import AdminRoute from './components/AdminRoute';
@@ -153,6 +155,11 @@ export default function App() {
           <Route path="/settings/*" element={<Setting />} />
           <Route path="/teams" element={<Teams />} />
           <Route path="/agents/*" element={<Agents />} />
+          <Route path="/intelligence" element={<IntelligenceOverview />} />
+          <Route
+            path="/intelligence/workbench"
+            element={<IntelligenceWorkbench />}
+          />
           <Route
             path="/admin/*"
             element={

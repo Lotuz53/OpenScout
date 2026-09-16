@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Radar,
   Search as SearchIcon,
   Settings as SettingsIcon,
 } from 'lucide-react';
@@ -356,6 +357,16 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <LayoutGrid className="size-5" strokeWidth={1.75} />
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/intelligence')}
+            aria-label="Product intelligence"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Radar className="size-5" strokeWidth={1.75} />
+          </Button>
           {conversations?.data && conversations.data.length > 0 && (
             <Button
               type="button"
@@ -448,6 +459,25 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           <p className="text-muted-foreground group-hover:text-foreground text-sm">
             {t('newChat')}
           </p>
+        </NavLink>
+        <NavLink
+          to="/intelligence"
+          end
+          onClick={() => {
+            if (isMobile || isTablet) {
+              setNavOpen(false);
+            }
+          }}
+          className={({ isActive }) =>
+            `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''}`
+          }
+        >
+          <Radar
+            className="text-muted-foreground size-5 shrink-0"
+            strokeWidth={1.75}
+            aria-label="product-intelligence"
+          />
+          <p className="text-foreground text-sm dark:text-white">产品情报</p>
         </NavLink>
         <div
           id="conversationsMainDiv"
