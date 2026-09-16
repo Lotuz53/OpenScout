@@ -532,7 +532,7 @@ git commit -m "feat(openscout): normalize traceable GitHub evidence"
 - 输入：`GitHubClient`、标准化函数和 `IntelligenceRepository`。
 - 输出：`SyncService.run(project_id: str, user_id: str) -> SyncSummary` 和 Celery 任务 `sync_intelligence_project(project_id, user_id, idempotency_key=None) -> dict`。
 
-- [ ] **步骤 1：编写部分成功服务测试**
+- [x] **步骤 1：编写部分成功服务测试**
 
 ```python
 def test_sync_commits_releases_when_issues_fail(repo, github, indexer) -> None:
@@ -544,13 +544,13 @@ def test_sync_commits_releases_when_issues_fail(repo, github, indexer) -> None:
     assert summary.failures[0].source_type == "issue"
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_sync_service.py tests/intelligence/test_tasks.py -q`
 
 预期：FAIL，提示缺少服务和任务。
 
-- [ ] **步骤 3：实现每个来源批次一个事务**
+- [x] **步骤 3：实现每个来源批次一个事务**
 
 ```python
 for source_type, collector in collectors.items():
@@ -565,7 +565,7 @@ for source_type, collector in collectors.items():
 
 持久化状态 `queued -> running -> complete|partial|failed`；记录准确对象数、最早/最晚时间、上限标记、错误类别和最近成功同步时间。
 
-- [ ] **步骤 4：注册具备幂等性和有界重试的 Celery 任务**
+- [x] **步骤 4：注册具备幂等性和有界重试的 Celery 任务**
 
 ```python
 @celery.task(bind=True, autoretry_for=(RecoverableGitHubError,), retry_backoff=True,
@@ -578,7 +578,7 @@ def sync_intelligence_project(self, *, project_id: str, user_id: str,
 
 将 `docsgpt.intelligence.tasks` 加入 `celeryconfig.imports`；不得放入解析或 Embedding 队列。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_sync_service.py tests/intelligence/test_tasks.py -q`
 

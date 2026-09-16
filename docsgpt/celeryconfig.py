@@ -15,6 +15,7 @@ accept_content = ['json']
 # Autodiscover tasks
 imports = (
     'docsgpt.api.user.tasks',
+    'docsgpt.intelligence.tasks',
     'docsgpt.vectorstore.embeddings_tasks',
 )
 
