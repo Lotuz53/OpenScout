@@ -572,7 +572,7 @@ praw==8.0.3
     # via docsgpt
 prawcore==4.0.0
     # via praw
-primp==2.0.0
+primp==2.0.1
     # via ddgs
 prompt-toolkit==3.0.53
     # via click-repl
