@@ -10,17 +10,20 @@ from flask import Flask, request
 from flask_restx import Api
 
 from docsgpt.api.user.intelligence.routes import intelligence_ns
+from docsgpt.intelligence.comparison import ComparisonCell, ComparisonResult, ComparisonRow
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
     Confidence,
     Coverage,
     Evidence,
+    QueryFilters,
     QueryResult,
     QueryIntent,
     RetrievalStrategy,
     SourceType,
 )
+from docsgpt.intelligence.topics import TopicTrend
 from docsgpt.seed.intelligence_projects import (
     STAGE_A_WINDOW_END,
     STAGE_A_WINDOW_START,
@@ -161,6 +164,94 @@ def test_query_rejects_invalid_request(client, auth_headers, mock_query_service)
 
     assert response.status_code == 400
     mock_query_service.query.assert_not_called()
+
+
+def test_topics_requires_auth(client) -> None:
+    response = client.get("/api/intelligence/topics")
+
+    assert response.status_code == 401
+
+
+def test_topics_returns_owner_scoped_trends(client, auth_headers, monkeypatch) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    _patch_repository(monkeypatch, repository)
+    trend_reader = MagicMock(
+        return_value=[
+            TopicTrend(
+                cluster_id="topic-1",
+                label="sso",
+                repository="langgenius/dify",
+                month="2026-01",
+                count=3,
+                snapshot_id="snapshot-1",
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.topic_trends",
+        trend_reader,
+    )
+
+    response = client.get(
+        f"/api/intelligence/topics?project_ids={project_id}&source_types=issue"
+        "&date_from=2026-01-01&date_to=2026-03-01",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json["trends"][0]["cluster_id"] == "topic-1"
+    trend_reader.assert_called_once()
+    project_ids, filters = trend_reader.call_args.args[:2]
+    assert project_ids == [project_id]
+    assert filters.source_types == [SourceType.ISSUE]
+    assert filters.date_from == date(2026, 1, 1)
+    assert filters.date_to == date(2026, 3, 1)
+    assert trend_reader.call_args.kwargs["user_id"] == "user-1"
+    assert trend_reader.call_args.kwargs["repository"] is repository
+
+
+def test_comparison_returns_owner_scoped_matrix(client, auth_headers, monkeypatch) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    _patch_repository(monkeypatch, repository)
+    service = MagicMock()
+    service.compare.return_value = ComparisonResult(
+        repositories=["langgenius/dify"],
+        rows=[
+            ComparisonRow(
+                dimension="enterprise_sso",
+                cells={
+                    "langgenius/dify": ComparisonCell(
+                        status="unknown",
+                        display_label="尚未确认",
+                    )
+                },
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.ComparisonService",
+        lambda current_repository, user_id: service,
+    )
+
+    response = client.post(
+        "/api/intelligence/comparison",
+        headers=auth_headers,
+        json={
+            "project_ids": [project_id],
+            "dimensions": ["enterprise_sso"],
+            "filters": {"repositories": ["langgenius/dify"]},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json["comparison"]["rows"][0]["cells"]["langgenius/dify"]["display_label"] == "尚未确认"
+    service.compare.assert_called_once_with(
+        [project_id],
+        ["enterprise_sso"],
+        QueryFilters(repositories=["langgenius/dify"]),
+    )
 
 
 def test_project_lookup_is_owner_scoped(client, auth_headers, monkeypatch) -> None:

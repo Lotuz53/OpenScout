@@ -10,10 +10,12 @@ from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from pydantic import ValidationError
 
+from docsgpt.intelligence.comparison import ComparisonService
 from docsgpt.intelligence.github_client import GitHubClient
 from docsgpt.intelligence.query_service import QueryService
-from docsgpt.intelligence.schemas import QueryRequest
+from docsgpt.intelligence.schemas import QueryFilters, QueryRequest
 from docsgpt.intelligence.tasks import sync_intelligence_project
+from docsgpt.intelligence.topics import topic_trends
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -88,6 +90,65 @@ def _parse_project_payload() -> tuple[str, date, date]:
     if window_end < window_start:
         raise ValueError("window_end must not be before window_start")
     return repository, window_start, window_end
+
+
+def _split_query_values(*names: str) -> list[str]:
+    """Read comma-separated or repeated query values without duplicates."""
+    values: list[str] = []
+    for name in names:
+        for raw_value in request.args.getlist(name):
+            values.extend(
+                value.strip()
+                for value in raw_value.split(",")
+                if value.strip()
+            )
+    return list(dict.fromkeys(values))
+
+
+def _parse_topic_query() -> tuple[list[str], QueryFilters]:
+    """Parse topic project ids and record filters from query parameters."""
+    project_ids = _split_query_values("project_ids", "project_id")
+    for project_id in project_ids:
+        if not looks_like_uuid(project_id):
+            raise ValueError("project_ids must contain UUIDs")
+    raw_filters: dict[str, Any] = {
+        "repositories": _split_query_values("repositories", "repository"),
+        "source_types": _split_query_values("source_types", "source_type"),
+    }
+    for field in ("date_from", "date_to"):
+        value = request.args.get(field)
+        if value:
+            raw_filters[field] = value
+    try:
+        filters = QueryFilters.model_validate(raw_filters)
+    except ValidationError as exc:
+        raise ValueError(exc.errors()[0]["msg"]) from exc
+    return project_ids, filters
+
+
+def _parse_comparison_payload() -> tuple[list[str], list[str], QueryFilters]:
+    """Validate project ids, comparison dimensions, and explicit filters."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON object required")
+
+    project_ids = payload.get("project_ids")
+    if not isinstance(project_ids, list) or not project_ids:
+        raise ValueError("project_ids must be a non-empty list")
+    if any(not isinstance(project_id, str) or not looks_like_uuid(project_id) for project_id in project_ids):
+        raise ValueError("project_ids must contain UUIDs")
+
+    dimensions = payload.get("dimensions")
+    if not isinstance(dimensions, list) or not dimensions:
+        raise ValueError("dimensions must be a non-empty list")
+    if any(not isinstance(dimension, str) or not dimension.strip() for dimension in dimensions):
+        raise ValueError("dimensions must contain non-empty strings")
+
+    try:
+        filters = QueryFilters.model_validate(payload.get("filters") or {})
+    except ValidationError as exc:
+        raise ValueError(exc.errors()[0]["msg"]) from exc
+    return list(dict.fromkeys(project_ids)), list(dict.fromkeys(dimensions)), filters
 
 
 def build_query_service() -> QueryService:
@@ -263,13 +324,72 @@ class IntelligenceQuery(Resource):
             return _error("internal error", 500)
 
 
+@intelligence_ns.route("/intelligence/topics")
+class IntelligenceTopics(Resource):
+    """Return owner-scoped monthly issue topic trends."""
+
+    def get(self):
+        """Read persisted topic trends for selected projects and filters."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        try:
+            project_ids, filters = _parse_topic_query()
+        except ValueError as exc:
+            return _error(str(exc), 400)
+
+        try:
+            with db_readonly() as conn:
+                trends = topic_trends(
+                    project_ids,
+                    filters,
+                    repository=IntelligenceRepository(conn),
+                    user_id=user_id,
+                )
+            return _ok({"trends": [_model_json(trend) for trend in trends]})
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        except Exception:
+            logger.exception("Could not read intelligence topic trends")
+            return _error("internal error", 500)
+
+
+@intelligence_ns.route("/intelligence/comparison")
+class IntelligenceComparison(Resource):
+    """Return an owner-scoped evidence-backed product comparison."""
+
+    def post(self):
+        """Build a comparison matrix from explicit project and feature inputs."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        try:
+            project_ids, dimensions, filters = _parse_comparison_payload()
+        except ValueError as exc:
+            return _error(str(exc), 400)
+
+        try:
+            with db_readonly() as conn:
+                result = ComparisonService(
+                    IntelligenceRepository(conn), user_id=user_id
+                ).compare(project_ids, dimensions, filters)
+            return _ok({"comparison": _model_json(result)})
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        except Exception:
+            logger.exception("Could not build intelligence comparison")
+            return _error("internal error", 500)
+
+
 __all__ = [
     "IntelligenceOverview",
     "IntelligenceProject",
     "IntelligenceProjectSync",
     "IntelligenceProjects",
+    "IntelligenceComparison",
     "IntelligenceQuery",
     "IntelligenceSyncRun",
+    "IntelligenceTopics",
     "build_query_service",
     "intelligence_ns",
 ]

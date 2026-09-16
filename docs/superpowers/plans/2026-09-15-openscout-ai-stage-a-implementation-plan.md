@@ -910,6 +910,7 @@ git commit -m "feat(openscout): route questions to retrieval and SQL"
 **文件：**
 - 新建： `docsgpt/intelligence/topics.py`
 - 新建： `docsgpt/intelligence/comparison.py`
+- 修改： `docsgpt/storage/db/repositories/intelligence.py`
 - 修改： `docsgpt/api/user/intelligence/routes.py`
 - 新建： `tests/intelligence/test_topics.py`
 - 新建： `tests/intelligence/test_comparison.py`
@@ -919,7 +920,7 @@ git commit -m "feat(openscout): route questions to retrieval and SQL"
 - 输入：Issue Embedding、按所有者隔离的记录、`QueryFilters`，以及任务 10 中带引用的拆分查询链路。
 - 输出：`cluster_issues(issues: Sequence[IntelligenceRecord], vectors: Mapping[str, Sequence[float]], max_clusters: int = 12) -> list[TopicCluster]`、`topic_trends(project_ids: Sequence[str], filters: QueryFilters) -> list[TopicTrend]`、`ComparisonService.compare(project_ids: Sequence[str], dimensions: Sequence[str], filters: QueryFilters) -> ComparisonResult`、`GET /api/intelligence/topics` 和 `POST /api/intelligence/comparison`。
 
-- [ ] **步骤 1：编写确定性聚类和未知单元格测试**
+- [x] **步骤 1：编写确定性聚类和未知单元格测试**
 
 ```python
 def test_cluster_assignment_is_stable_for_input_order(issue_vectors) -> None:
@@ -938,21 +939,21 @@ def test_comparison_uses_unknown_without_supporting_evidence(service) -> None:
     assert cell.evidence_ids == []
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_topics.py tests/intelligence/test_comparison.py -q`
 
 预期：FAIL，提示缺少主题或对比模块。
 
-- [ ] **步骤 3：使用现有 NumPy 实现确定性球面聚类**
+- [x] **步骤 3：使用现有 NumPy 实现确定性球面聚类**
 
 按稳定 id 排序记录并归一化向量；使用 `k = min(max_clusters, max(2, round(sqrt(n / 2))))`；通过确定性的最远点初始化选择质心；最多执行 50 次余弦分配/更新迭代，分配不再变化时停止。从标题中频率最高的五个非停用词生成可读标签；持久化算法版本、聚类 id、记录 id、质心和快照 id。不得只为该功能引入 scikit-learn。
 
-- [ ] **步骤 4：计算月度趋势和带引用的对比单元格**
+- [x] **步骤 4：计算月度趋势和带引用的对比单元格**
 
 在 PostgreSQL 中按仓库和月份统计各聚类数量。产品对比按仓库拆分每个功能维度，返回 `supported`、`not_supported` 或 `unknown`；前两种状态必须有证据，缺少证据或证据冲突时返回 `unknown`。每个单元格包含首次证据日期、社区信号数量、证据 id 和覆盖警告。
 
-- [ ] **步骤 5：验证路由并提交**
+- [x] **步骤 5：验证路由并提交**
 
 运行：`python -m pytest tests/intelligence/test_topics.py tests/intelligence/test_comparison.py tests/api/user/intelligence/test_routes.py -q`
 

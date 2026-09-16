@@ -366,6 +366,209 @@ class IntelligenceRepository:
             for row in result.fetchall()
         ]
 
+    def save_topic_run(
+        self,
+        *,
+        project_id: str,
+        snapshot_id: str,
+        algorithm_version: str,
+        clusters: Sequence[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Persist a reproducible topic clustering snapshot for a project."""
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO intelligence_topic_runs
+                    (project_id, snapshot_id, algorithm_version, clusters)
+                VALUES
+                    (CAST(:project_id AS uuid), :snapshot_id, :algorithm_version,
+                     CAST(:clusters AS jsonb))
+                ON CONFLICT (project_id, snapshot_id, algorithm_version) DO UPDATE SET
+                    clusters = EXCLUDED.clusters
+                RETURNING *
+                """
+            ),
+            {
+                "project_id": project_id,
+                "snapshot_id": snapshot_id,
+                "algorithm_version": algorithm_version,
+                "clusters": json.dumps(list(clusters), ensure_ascii=False),
+            },
+        )
+        return row_to_dict(result.fetchone())
+
+    def repositories_for_projects(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+    ) -> list[str]:
+        """Return selected repository names only when owned by ``user_id``."""
+        where, params = _project_scope(user_id, project_ids)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT p.repository
+                FROM intelligence_projects AS p
+                WHERE {' AND '.join(where)}
+                ORDER BY p.created_at ASC, p.repository ASC, p.id ASC
+                """
+            ),
+            params,
+        )
+        return [str(row._mapping["repository"]) for row in result.fetchall()]
+
+    def comparison_evidence(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        filters: QueryFilters,
+    ) -> list[dict[str, Any]]:
+        """Return owner-scoped records used to classify comparison cells."""
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        params["comparison_limit"] = 10_000
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT r.id::text AS id,
+                       r.repository,
+                       r.source_type,
+                       r.title,
+                       r.body,
+                       r.source_url,
+                       {_OCCURRED_AT_SQL} AS occurred_at,
+                       r.comments_count,
+                       r.reactions_count
+                FROM intelligence_records AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE {' AND '.join(where)}
+                ORDER BY r.repository ASC,
+                         {_OCCURRED_AT_SQL} ASC NULLS LAST,
+                         r.id::text ASC
+                LIMIT :comparison_limit
+                """
+            ),
+            params,
+        )
+        return [
+            {
+                key: value
+                for key, value in row_to_dict(row).items()
+                if key != "_id"
+            }
+            for row in result.fetchall()
+        ]
+
+    def comparison_coverage(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        filters: QueryFilters,
+    ) -> dict[str, dict[str, Any]]:
+        """Return per-project warnings for partial, capped, or pending data."""
+        del filters  # Coverage describes the selected project, not one record slice.
+        where, params = _project_scope(user_id, project_ids)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT p.repository,
+                       p.status,
+                       latest.coverage,
+                       CASE
+                           WHEN p.status IN ('partial', 'failed')
+                               THEN '同步状态: ' || p.status
+                           WHEN p.status IN ('draft', 'syncing')
+                               THEN '同步尚未完成'
+                           WHEN COALESCE((latest.coverage->>'capped')::boolean, false)
+                               THEN '数据达到采集上限'
+                           ELSE NULL
+                       END AS warning
+                FROM intelligence_projects AS p
+                LEFT JOIN LATERAL (
+                    SELECT s.coverage
+                    FROM intelligence_sync_runs AS s
+                    WHERE s.project_id = p.id
+                    ORDER BY s.created_at DESC, s.id DESC
+                    LIMIT 1
+                ) AS latest ON true
+                WHERE {' AND '.join(where)}
+                ORDER BY p.created_at ASC, p.repository ASC, p.id ASC
+                """
+            ),
+            params,
+        )
+        return {
+            str(row._mapping["repository"]): {
+                "warning": row._mapping.get("warning"),
+                "status": row._mapping.get("status"),
+            }
+            for row in result.fetchall()
+        }
+
+    def topic_trends(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+        filters: QueryFilters,
+    ) -> list[dict[str, Any]]:
+        """Count records by repository and month from the latest topic run."""
+        where, params = _analytics_scope(user_id, project_ids, filters)
+        project_where, _ = _project_scope(user_id, project_ids)
+        latest_project_where = [clause.replace("p.", "tp.") for clause in project_where]
+        result = self._conn.execute(
+            text(
+                f"""
+                WITH latest_runs AS (
+                    SELECT DISTINCT ON (tr.project_id)
+                           tr.project_id,
+                           tr.snapshot_id,
+                           tr.clusters
+                    FROM intelligence_topic_runs AS tr
+                    JOIN intelligence_projects AS tp ON tp.id = tr.project_id
+                    WHERE {' AND '.join(latest_project_where)}
+                    ORDER BY tr.project_id, tr.created_at DESC, tr.id DESC
+                )
+                SELECT cluster.data->>'id' AS cluster_id,
+                       cluster.data->>'label' AS label,
+                       r.repository,
+                       to_char(
+                           date_trunc('month', {_OCCURRED_AT_SQL}),
+                           'YYYY-MM'
+                       ) AS month,
+                       COUNT(*) AS count,
+                       latest_runs.snapshot_id
+                FROM latest_runs
+                JOIN intelligence_projects AS p ON p.id = latest_runs.project_id
+                CROSS JOIN LATERAL jsonb_array_elements(latest_runs.clusters) AS cluster(data)
+                JOIN intelligence_records AS r
+                  ON r.project_id = latest_runs.project_id
+                 AND (
+                     r.id::text IN (
+                         SELECT jsonb_array_elements_text(cluster.data->'record_ids')
+                     )
+                     OR r.external_id IN (
+                         SELECT jsonb_array_elements_text(cluster.data->'record_ids')
+                     )
+                 )
+                WHERE {' AND '.join(where)}
+                GROUP BY cluster.data->>'id',
+                         cluster.data->>'label',
+                         r.repository,
+                         date_trunc('month', {_OCCURRED_AT_SQL}),
+                         latest_runs.snapshot_id
+                ORDER BY r.repository ASC, month ASC, cluster_id ASC
+                """
+            ),
+            params,
+        )
+        return [
+            {
+                key: value
+                for key, value in row_to_dict(row).items()
+                if key != "_id"
+            }
+            for row in result.fetchall()
+        ]
+
     def _aggregate_coverage(
         self,
         user_id: str,
@@ -553,9 +756,18 @@ def _analytics_scope(
     filters: QueryFilters,
 ) -> tuple[list[str], dict[str, Any]]:
     """Build a parameterized owner and metadata scope for analytics SQL."""
+    where, params = _project_scope(user_id, project_ids)
+    _append_record_filters(where, params, filters)
+    return where, params
+
+
+def _project_scope(
+    user_id: str,
+    project_ids: Sequence[str],
+) -> tuple[list[str], dict[str, Any]]:
+    """Build the owner and project-id predicates shared by intelligence SQL."""
     where = ["p.user_id = :user_id"]
     params: dict[str, Any] = {"user_id": user_id}
-
     project_parameters: list[str] = []
     for index, project_id in enumerate(project_ids or []):
         try:
@@ -567,7 +779,15 @@ def _analytics_scope(
         project_parameters.append(f"CAST(:{parameter} AS uuid)")
     if project_parameters:
         where.append(f"p.id IN ({', '.join(project_parameters)})")
+    return where, params
 
+
+def _append_record_filters(
+    where: list[str],
+    params: dict[str, Any],
+    filters: QueryFilters,
+) -> None:
+    """Append parameterized record metadata filters to an existing scope."""
     repositories = list(filters.repositories or [])
     if repositories:
         placeholders = _bind_values(repositories, "repository", params)
@@ -587,7 +807,6 @@ def _analytics_scope(
     if filters.date_to is not None:
         params["date_to"] = filters.date_to
         where.append(f"{_OCCURRED_AT_SQL}::date <= :date_to")
-    return where, params
 
 
 def _bind_values(
