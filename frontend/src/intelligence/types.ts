@@ -9,6 +9,39 @@ export const SOURCE_TYPES = [
 
 export type SourceType = (typeof SOURCE_TYPES)[number];
 
+export type SyncRunStatus =
+  'queued' | 'running' | 'complete' | 'partial' | 'failed';
+
+export type SyncFailureCategory =
+  'rate_limit' | 'auth' | 'not_found' | 'network' | 'invalid_payload';
+
+export interface SyncFailure {
+  source_type: string;
+  category: SyncFailureCategory | string;
+  retryable: boolean;
+  message?: string;
+}
+
+export interface SyncRunCoverage {
+  repositories: string[];
+  date_from: string | null;
+  date_to: string | null;
+  capped: boolean;
+  last_synced_at: string | null;
+}
+
+export interface SyncRun {
+  id: string;
+  project_id?: string;
+  status: SyncRunStatus;
+  counts: Partial<Record<SourceType, number>>;
+  failures: SyncFailure[];
+  coverage: SyncRunCoverage;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at?: string | null;
+}
+
 export const QUERY_INTENTS = [
   'factual',
   'temporal',
@@ -237,4 +270,5 @@ export interface IntelligenceOverview {
   capped?: boolean;
   latest_version?: string | null;
   topics?: TopicTrend[];
+  latest_sync_run?: SyncRun | null;
 }

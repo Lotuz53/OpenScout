@@ -27,6 +27,33 @@ const cappedOverview: OverviewData = {
   capped: true,
 };
 
+const partialRunOverview: OverviewData = {
+  ...cappedOverview,
+  latest_sync_run: {
+    id: 'run-1',
+    project_id: 'project-1',
+    status: 'partial',
+    counts: { documentation: 3, issue: 7, release: 1 },
+    failures: [
+      {
+        source_type: 'issue',
+        category: 'network',
+        retryable: true,
+        message: 'temporary failure',
+      },
+    ],
+    coverage: {
+      repositories: ['o/r'],
+      date_from: '2026-01-01',
+      date_to: '2026-09-16',
+      capped: false,
+      last_synced_at: null,
+    },
+    started_at: '2026-09-16T08:30:00Z',
+    finished_at: '2026-09-16T08:31:00Z',
+  },
+};
+
 function renderOverview(overview: OverviewData): string {
   const store = configureStore({
     reducer: {
@@ -66,5 +93,13 @@ describe('intelligence overview', () => {
     const html = renderOverview(cappedOverview);
 
     expect(html).toContain('部分项目尚未完成同步');
+  });
+
+  it('renders real sync failures from the latest run', () => {
+    const html = renderOverview(partialRunOverview);
+
+    expect(html).toContain('1 个来源需要关注');
+    expect(html).toContain('Issue · 网络暂时不可用');
+    expect(html).toContain('可以重试');
   });
 });

@@ -1,7 +1,7 @@
 """Contract tests for the OpenScout intelligence API."""
 
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -496,9 +496,29 @@ def test_sync_run_and_overview_are_owner_scoped(
     client, auth_headers, monkeypatch
 ) -> None:
     run_id = str(uuid4())
+    latest_run_id = uuid4()
     repository = MagicMock()
     repository.get_sync_run.return_value = {"id": run_id, "status": "complete"}
-    repository.overview.return_value = {"projects": 1, "records": 3}
+    repository.overview.return_value = {
+        "projects": 1,
+        "records": 3,
+        "latest_sync_run": {
+            "id": latest_run_id,
+            "project_id": uuid4(),
+            "status": "partial",
+            "counts": {"issue": 2},
+            "failures": [],
+            "coverage": {
+                "repositories": ["o/r"],
+                "date_from": date(2026, 1, 1),
+                "date_to": date(2026, 9, 16),
+                "capped": False,
+                "last_synced_at": None,
+            },
+            "started_at": datetime(2026, 9, 16, tzinfo=timezone.utc),
+            "finished_at": None,
+        },
+    }
     _patch_repository(monkeypatch, repository)
 
     run_response = client.get(
@@ -512,6 +532,11 @@ def test_sync_run_and_overview_are_owner_scoped(
     assert run_response.json["sync_run"]["id"] == run_id
     assert overview_response.status_code == 200
     assert overview_response.json["overview"]["records"] == 3
+    assert overview_response.json["overview"]["latest_sync_run"]["id"] == str(latest_run_id)
+    assert (
+        overview_response.json["overview"]["latest_sync_run"]["coverage"]["date_from"]
+        == "2026-01-01"
+    )
     repository.get_sync_run.assert_called_once_with(run_id, "user-1")
     repository.overview.assert_called_once_with("user-1")
 

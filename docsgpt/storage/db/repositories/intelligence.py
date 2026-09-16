@@ -223,8 +223,46 @@ class IntelligenceRepository:
             ),
             {"user_id": user_id},
         ).fetchall()
+        latest_run_row = self._conn.execute(
+            text(
+                """
+                SELECT r.*, p.repository, p.window_start, p.window_end
+                FROM intelligence_sync_runs AS r
+                JOIN intelligence_projects AS p ON p.id = r.project_id
+                WHERE p.user_id = :user_id
+                ORDER BY r.created_at DESC, r.id DESC
+                LIMIT 1
+                """
+            ),
+            {"user_id": user_id},
+        ).fetchone()
 
         totals_row = row_to_dict(totals)
+        latest_sync_run = None
+        if latest_run_row is not None:
+            latest_row = row_to_dict(latest_run_row)
+            latest_sync_run = {
+                key: latest_row.get(key)
+                for key in (
+                    "id",
+                    "project_id",
+                    "status",
+                    "counts",
+                    "failures",
+                    "coverage",
+                    "started_at",
+                    "finished_at",
+                    "created_at",
+                )
+            }
+            if not latest_sync_run["coverage"]:
+                latest_sync_run["coverage"] = {
+                    "repositories": [latest_row["repository"]],
+                    "date_from": latest_row["window_start"],
+                    "date_to": latest_row["window_end"],
+                    "capped": False,
+                    "last_synced_at": None,
+                }
         return {
             "projects": int(totals_row.get("projects") or 0),
             "records": int(totals_row.get("records") or 0),
@@ -241,6 +279,7 @@ class IntelligenceRepository:
                 str(row._mapping["status"]): int(row._mapping["count"])
                 for row in statuses
             },
+            "latest_sync_run": latest_sync_run,
         }
 
     def aggregate(

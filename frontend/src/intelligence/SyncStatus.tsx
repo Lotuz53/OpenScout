@@ -10,40 +10,22 @@ import {
 
 import { Button } from '../components/ui/button';
 import { cn } from '../lib/utils';
-import type { SourceType } from './types';
+import type {
+  SourceType,
+  SyncFailure,
+  SyncFailureCategory,
+  SyncRun,
+  SyncRunCoverage,
+  SyncRunStatus,
+} from './types';
 
-export type SyncRunStatus =
-  'queued' | 'running' | 'complete' | 'partial' | 'failed';
-
-export type SyncFailureCategory =
-  'rate_limit' | 'auth' | 'not_found' | 'network' | 'invalid_payload';
-
-export interface SyncFailure {
-  source_type: string;
-  category: SyncFailureCategory | string;
-  retryable: boolean;
-  /** Server details are intentionally retained only for non-rendering callers. */
-  message?: string;
-}
-
-export interface SyncRunCoverage {
-  repositories: string[];
-  date_from: string | null;
-  date_to: string | null;
-  capped: boolean;
-  last_synced_at: string | null;
-}
-
-export interface SyncRun {
-  id: string;
-  status: SyncRunStatus;
-  counts: Partial<Record<SourceType, number>>;
-  failures: SyncFailure[];
-  coverage: SyncRunCoverage;
-  started_at: string | null;
-  finished_at: string | null;
-  created_at?: string | null;
-}
+export type {
+  SyncFailure,
+  SyncFailureCategory,
+  SyncRun,
+  SyncRunCoverage,
+  SyncRunStatus,
+} from './types';
 
 interface SyncStatusProps {
   run: SyncRun;
@@ -197,7 +179,8 @@ export default function SyncStatus({
   retrying = false,
   className,
 }: SyncStatusProps) {
-  const retryAvailable = run.failures.length > 0;
+  const retryAvailable =
+    run.failures.some((failure) => failure.retryable) && Boolean(onRetry);
   const lastSuccess = run.coverage.last_synced_at ?? run.finished_at;
 
   return (

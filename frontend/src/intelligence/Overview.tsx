@@ -119,6 +119,7 @@ function buildOverviewRun(
   overview: OverviewData,
   projects: IntelligenceProject[],
 ): SyncRun {
+  if (overview.latest_sync_run) return overview.latest_sync_run;
   return {
     id: 'overview',
     status: overviewRunStatus(overview),
@@ -226,6 +227,12 @@ export default function IntelligenceOverview() {
     '尚未同步';
   const topics = overview.topics?.slice(0, 5) ?? [];
   const overviewRun = buildOverviewRun(overview, projects);
+  const retryProject = overviewRun.project_id
+    ? projects.find((project) => project.id === overviewRun.project_id)
+    : projects.find(
+        (project) =>
+          project.repository === overviewRun.coverage.repositories[0],
+      );
 
   const handleSync = async (projectId: string) => {
     if (syncingProjectId) return;
@@ -296,7 +303,13 @@ export default function IntelligenceOverview() {
         )}
 
         <section className="mt-8" aria-label="同步状态">
-          <SyncStatus run={overviewRun} />
+          <SyncStatus
+            run={overviewRun}
+            onRetry={
+              retryProject ? () => void handleSync(retryProject.id) : undefined
+            }
+            retrying={retryProject?.id === syncingProjectId}
+          />
         </section>
 
         <section

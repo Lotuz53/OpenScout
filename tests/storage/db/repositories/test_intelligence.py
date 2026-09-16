@@ -2,7 +2,13 @@ from datetime import date, datetime, timezone
 
 import pytest
 
-from docsgpt.intelligence.schemas import Coverage, IntelligenceRecord, SourceType, SyncSummary
+from docsgpt.intelligence.schemas import (
+    Coverage,
+    IntelligenceRecord,
+    SourceType,
+    SyncFailure,
+    SyncSummary,
+)
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 
 
@@ -101,6 +107,37 @@ def test_sync_run_persists_summary(pg_conn, project) -> None:
     assert run["status"] == "running"
     assert finished["status"] == "complete"
     assert finished["counts"]["issue"] == 1
+
+
+def test_overview_includes_latest_owner_sync_run(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    run = repo.start_sync_run(str(project["id"]))
+    summary = SyncSummary(
+        status="partial",
+        counts={SourceType.ISSUE: 1},
+        failures=[
+            SyncFailure(
+                source_type=SourceType.RELEASE,
+                category="network",
+                retryable=True,
+                message="temporary failure",
+            )
+        ],
+        coverage=Coverage(
+            repositories=["langgenius/dify"],
+            date_from=date(2025, 9, 14),
+            date_to=date(2026, 9, 14),
+            counts={SourceType.ISSUE: 1},
+        ),
+    )
+    repo.finish_sync_run(str(run["id"]), summary)
+
+    overview = repo.overview("owner")
+
+    latest_run = overview["latest_sync_run"]
+    assert str(latest_run["id"]) == str(run["id"])
+    assert latest_run["status"] == "partial"
+    assert latest_run["failures"][0]["category"] == "network"
 
 
 def test_save_report_is_owner_scoped(pg_conn) -> None:

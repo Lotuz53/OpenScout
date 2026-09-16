@@ -8,6 +8,7 @@ import logging
 from datetime import date, datetime, timezone
 import secrets
 from typing import Any
+from uuid import UUID
 
 from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
@@ -70,6 +71,19 @@ def _sync_task() -> Any:
     return sync_intelligence_project
 
 
+def _json_value(value: Any) -> Any:
+    """Convert nested database values to JSON-compatible data."""
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_value(item) for item in value]
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
+
+
 def _json_row(row: dict[str, Any] | None) -> dict[str, Any]:
     """Render a repository row without exposing the legacy duplicate id."""
     if not row:
@@ -77,12 +91,7 @@ def _json_row(row: dict[str, Any] | None) -> dict[str, Any]:
     rendered = dict(row)
     rendered.pop("_id", None)
     rendered.pop("share_token_hash", None)
-    for key, value in list(rendered.items()):
-        if hasattr(value, "isoformat"):
-            rendered[key] = value.isoformat()
-        elif value is not None and key == "id":
-            rendered[key] = str(value)
-    return rendered
+    return _json_value(rendered)
 
 
 def _model_json(value: Any) -> Any:
