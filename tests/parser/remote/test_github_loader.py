@@ -116,6 +116,33 @@ class TestGitHubLoaderLoadData:
             "source": "https://github.com/owner/repo/blob/main/src/main.py",
         }
 
+    def test_load_data_applies_path_filter_before_fetching(self, monkeypatch):
+        loader = GitHubLoader()
+        monkeypatch.setattr(loader, "get_default_branch", lambda repo: "main")
+        monkeypatch.setattr(
+            loader, "fetch_repo_tree",
+            lambda repo, branch: ([
+                ("README.md", 10),
+                ("docs/guide.md", 10),
+                ("src/main.py", 10),
+            ], False),
+        )
+        fetched: list[str] = []
+
+        def fake_fetch_content(repo, file_path):
+            fetched.append(file_path)
+            return f"content for {file_path}"
+
+        monkeypatch.setattr(loader, "fetch_file_content", fake_fetch_content)
+
+        docs = loader.load_data(
+            "https://github.com/owner/repo",
+            path_filter=lambda path: path == "README.md" or path.startswith("docs/"),
+        )
+
+        assert [document.doc_id for document in docs] == ["README.md", "docs/guide.md"]
+        assert set(fetched) == {"README.md", "docs/guide.md"}
+
 
 
 

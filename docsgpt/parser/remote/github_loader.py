@@ -4,7 +4,7 @@ import mimetypes
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 
@@ -446,8 +446,19 @@ class GitHubLoader(BaseRemote):
         paths = self.fetch_repo_files(repo_name)
         return self.select_files([(p, 0) for p in paths])
 
-    def load_data(self, repo_url: str) -> List[Document]:
-        """Load every ingestable text file in ``repo_url`` as a Document."""
+    def load_data(
+        self,
+        repo_url: str,
+        *,
+        path_filter: Callable[[str], bool] | None = None,
+    ) -> List[Document]:
+        """Load selected ingestable text files in ``repo_url`` as Documents.
+
+        Args:
+            repo_url: GitHub repository URL or ``owner/name`` identifier.
+            path_filter: Optional predicate applied after the loader's normal
+                text-file safeguards and before any file content is fetched.
+        """
         repo_name = self.normalize_repo(repo_url)
         if not repo_name or "/" not in repo_name:
             raise ValueError(
@@ -456,6 +467,8 @@ class GitHubLoader(BaseRemote):
             )
         branch = self.get_default_branch(repo_name)
         files = self._list_candidate_files(repo_name, branch)
+        if path_filter is not None:
+            files = [file_path for file_path in files if path_filter(file_path)]
         logger.info(
             "Fetching %d file(s) from %s@%s", len(files), repo_name, branch
         )

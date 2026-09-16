@@ -9,7 +9,9 @@ from typing import Any, Iterator, Mapping, Sequence
 
 from requests import HTTPError, Response
 
+from docsgpt.intelligence.normalizer import is_supported_document
 from docsgpt.parser.remote.github_loader import GitHubLoader, GitHubRateLimitError
+from docsgpt.parser.schema.base import Document
 
 __all__ = ["GitHubClient", "GitHubRateLimitError"]
 
@@ -20,7 +22,7 @@ GITHUB_API = "https://api.github.com"
 
 
 class GitHubClient:
-    """Collect bounded issues, comments and releases through GitHub's API."""
+    """Collect bounded documentation, issues, comments and releases."""
 
     def __init__(self, loader: GitHubLoader | None = None) -> None:
         """Initialize the client with the existing authenticated loader.
@@ -208,6 +210,29 @@ class GitHubClient:
             if 'rel="next"' not in link:
                 return
             page += 1
+
+    def iter_documents(
+        self,
+        repo: str,
+        since: datetime,
+        until: datetime,
+    ) -> Iterator[Document]:
+        """Yield the current README and ``docs/`` files for a repository.
+
+        GitHub's contents response does not provide a source-update timestamp
+        for each file. Documents are therefore collected on every incremental
+        pass and the normalizer's content hash decides whether persistence and
+        indexing need to change. The time arguments remain part of the common
+        source collector contract for callers that collect mixed source types.
+        """
+        del since, until
+        repo_name = self._normalize_repo(repo)
+        for document in self._loader.load_data(
+            repo_name,
+            path_filter=is_supported_document,
+        ):
+            if is_supported_document(document.doc_id):
+                yield document
 
     def iter_issues(
         self,

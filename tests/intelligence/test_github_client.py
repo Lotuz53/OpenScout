@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from docsgpt.intelligence.github_client import GitHubClient, GitHubRateLimitError
+from docsgpt.parser.schema.base import Document
 
 
 DATE_FROM = datetime(2025, 9, 14, tzinfo=timezone.utc)
@@ -35,6 +36,29 @@ def test_iter_issues_filters_pull_requests_and_stops_at_limit() -> None:
         "https://api.github.com/repos/o/r/issues",
         params={"state": "all", "per_page": 100, "page": 1},
     )
+
+
+def test_iter_documents_uses_the_stage_a_document_scope() -> None:
+    loader = MagicMock()
+    loader.load_data.return_value = [
+        Document(
+            text="# README",
+            doc_id="README.md",
+            extra_info={"source": "https://github.com/o/r/blob/main/README.md"},
+        ),
+        Document(
+            text="source code",
+            doc_id="src/main.py",
+            extra_info={"source": "https://github.com/o/r/blob/main/src/main.py"},
+        ),
+    ]
+
+    rows = list(GitHubClient(loader=loader).iter_documents("o/r", DATE_FROM, DATE_TO))
+
+    assert [row.doc_id for row in rows] == ["README.md"]
+    assert loader.load_data.call_args.args == ("o/r",)
+    assert loader.load_data.call_args.kwargs["path_filter"]("README.md") is True
+    assert loader.load_data.call_args.kwargs["path_filter"]("src/main.py") is False
 
 
 def test_iter_issues_follows_next_page_until_limit() -> None:
