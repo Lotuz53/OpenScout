@@ -1,0 +1,16 @@
+{
+  "source": "evaluation/results/routed.dev.jsonl",
+  "split": "dev",
+  "snapshot_id": "stage-a-2026-09-14",
+  "questions": 60,
+  "metrics": {
+    "answer_score": 0.8258333333333333,
+    "citation_score": 0.5888888888888889,
+    "faithfulness_score": 0.49472222222222223,
+    "input_tokens": 9.2,
+    "latency_ms": 0.0,
+    "ndcg_at_10": 0.890969338433336,
+    "output_tokens": 40.833333333333336,
+    "recall_at_5": 0.9077777777777778
+  }
+}

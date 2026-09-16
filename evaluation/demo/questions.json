@@ -1,0 +1,79 @@
+[
+  {
+    "id": "discover-trends",
+    "label": "发现趋势",
+    "snapshot_id": "stage-a-2026-09-14",
+    "type": "comprehensive",
+    "subtype": "aggregate",
+    "question": "Which issue requests are recorded for the three repositories, and when did they appear?",
+    "repositories": [
+      "langgenius/dify",
+      "infiniflow/ragflow",
+      "labring/FastGPT"
+    ],
+    "date_from": null,
+    "date_to": null,
+    "expected_path": "/intelligence/topics"
+  },
+  {
+    "id": "representative-issues",
+    "label": "查看代表性 Issues",
+    "snapshot_id": "stage-a-2026-09-14",
+    "type": "factual",
+    "question": "Show representative GitHub Issues for Dify, RAGFlow, and FastGPT.",
+    "repositories": [
+      "langgenius/dify",
+      "infiniflow/ragflow",
+      "labring/FastGPT"
+    ],
+    "date_from": null,
+    "date_to": null,
+    "expected_path": "/intelligence/query"
+  },
+  {
+    "id": "release-relationship",
+    "label": "分析 Release 关系",
+    "snapshot_id": "stage-a-2026-09-14",
+    "type": "comprehensive",
+    "subtype": "relational",
+    "question": "How do release improvements relate to retrieval and search documentation?",
+    "repositories": [
+      "langgenius/dify",
+      "infiniflow/ragflow"
+    ],
+    "date_from": null,
+    "date_to": null,
+    "expected_path": "/intelligence/query"
+  },
+  {
+    "id": "compare-products",
+    "label": "对比三个产品",
+    "snapshot_id": "stage-a-2026-09-14",
+    "type": "comparative",
+    "question": "Compare export, reranking, and team workflow requests across the three products.",
+    "repositories": [
+      "langgenius/dify",
+      "infiniflow/ragflow",
+      "labring/FastGPT"
+    ],
+    "date_from": null,
+    "date_to": null,
+    "expected_path": "/intelligence/comparison"
+  },
+  {
+    "id": "generate-report",
+    "label": "生成报告",
+    "snapshot_id": "stage-a-2026-09-14",
+    "type": "comprehensive",
+    "subtype": "aggregate",
+    "question": "List the release versions and themes recorded for all three products.",
+    "repositories": [
+      "langgenius/dify",
+      "infiniflow/ragflow",
+      "labring/FastGPT"
+    ],
+    "date_from": null,
+    "date_to": null,
+    "expected_path": "/intelligence/reports"
+  }
+]

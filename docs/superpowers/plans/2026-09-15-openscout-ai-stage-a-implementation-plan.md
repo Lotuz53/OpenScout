@@ -1271,16 +1271,19 @@ git commit -m "feat(openscout): present evidence comparisons and reports"
 - 新建： `tests/integration/test_openscout_stage_a.py`
 - 新建： `evaluation/demo/questions.json`
 - 新建： `evaluation/results/stage-a-summary.md`
+- 新建： `evaluation/results/baseline.json`
+- 新建： `evaluation/results/stage-a.json`
 - 新建： `docs/openscout/architecture.md`
 - 新建： `docs/openscout/limitations.md`
 - 新建： `README-openscout.md`
 - 修改： `docs/openscout/decision-log.md`
+- 修改： `evaluation/summarize.py`
 
 **接口：**
 - 输入：冻结快照、80 条问题数据集和阶段 A 全部 API/界面。
 - 输出：一套可重复执行的五分钟演示、实测门槛报告、架构/限制文档、截图/视频清单和版本标签资格。
 
-- [ ] **步骤 1：编写端到端验收测试**
+- [x] **步骤 1：编写端到端验收测试**
 
 ```python
 def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
@@ -1291,13 +1294,13 @@ def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
         assert all(e["source_url"].startswith("https://github.com/") for e in result["evidence"])
 ```
 
-- [ ] **步骤 2：针对固定快照运行集成测试**
+- [x] **步骤 2：针对固定快照运行集成测试**
 
 运行：`KMP_DUPLICATE_LIB_OK=TRUE python -m pytest tests/integration/test_openscout_stage_a.py -q`
 
 预期：五个演示场景全部 PASS：发现趋势、查看代表性 Issues、分析 Release 关系、对比三个产品和生成报告。
 
-- [ ] **步骤 3：运行一次封存测试集并生成门槛报告**
+- [x] **步骤 3：运行一次封存测试集并生成门槛报告**
 
 运行：`python evaluation/run_eval.py --config evaluation/configs/routed.yaml --split holdout --freeze`
 
@@ -1307,11 +1310,11 @@ def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
 
 预期：报告包含事实题正确率、引用准确率、复杂问题成功率、非 GraphRAG 平均延迟、token 成本和各门槛是否通过；只有所有跟踪指标下降不超过 5 个百分点时，回归检查才返回 0。之后不得修改封存问题。
 
-- [ ] **步骤 4：只记录实测结论并保存证明材料**
+- [x] **步骤 4：只记录实测结论并保存证明材料**
 
 `README-openscout.md` 必须披露 DocsGPT 底座、列出 OpenScout 原创工作、展示三组实验、链接失败案例、说明 GitHub Issue 抽样偏差，并使用摘要中的实测值。按照 PR 要求保存截图或短视频。
 
-- [ ] **步骤 5：运行完整验证并提交**
+- [x] **步骤 5：运行完整验证并提交**
 
 运行：`ruff check .`
 
@@ -1328,6 +1331,8 @@ git add tests/integration evaluation docs/openscout README-openscout.md
 git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
+
+> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；完整 pytest 在收集阶段遇到仓库既有的两个 `test_routes.py` 同名模块冲突，全仓库前端 lint 仍有既有格式错误，未扩大范围修复。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。
 
 ## 阶段 A 自检记录
 
