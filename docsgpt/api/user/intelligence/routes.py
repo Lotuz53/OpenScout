@@ -14,7 +14,7 @@ from flask import jsonify, make_response, request
 from flask_restx import Namespace, Resource
 from pydantic import ValidationError
 
-from docsgpt.intelligence.comparison import ComparisonService
+from docsgpt.intelligence.comparison import ComparisonResult, ComparisonService
 from docsgpt.intelligence.github_client import GitHubClient
 from docsgpt.intelligence.preflight import RepositoryPreflightService
 from docsgpt.intelligence.query_service import QueryService
@@ -23,7 +23,7 @@ from docsgpt.intelligence.report_service import (
     ReportNotFoundError,
     ReportService,
 )
-from docsgpt.intelligence.schemas import QueryFilters, QueryRequest
+from docsgpt.intelligence.schemas import QueryFilters, QueryRequest, QueryResult
 from docsgpt.intelligence.topics import topic_trends
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
@@ -195,7 +195,7 @@ def _parse_comparison_payload() -> tuple[list[str], list[str], QueryFilters]:
     return list(dict.fromkeys(project_ids)), list(dict.fromkeys(dimensions)), filters
 
 
-def _parse_report_payload() -> tuple[list[str], list[Any]]:
+def _parse_report_payload() -> tuple[list[str], list[QueryResult | ComparisonResult]]:
     """Validate project ids and saved structured results for a report."""
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -212,7 +212,18 @@ def _parse_report_payload() -> tuple[list[str], list[Any]]:
         raise ValueError("results must be a non-empty list")
     if any(not isinstance(result, dict) for result in results):
         raise ValueError("results must contain JSON objects")
-    return list(dict.fromkeys(project_ids)), results
+    validated_results: list[QueryResult | ComparisonResult] = []
+    for result in results:
+        try:
+            validated_results.append(QueryResult.model_validate(result))
+        except ValidationError:
+            try:
+                validated_results.append(ComparisonResult.model_validate(result))
+            except ValidationError as exc:
+                raise ValueError(
+                    "results must contain QueryResult or ComparisonResult"
+                ) from exc
+    return list(dict.fromkeys(project_ids)), validated_results
 
 
 def build_query_service() -> QueryService:
@@ -507,8 +518,11 @@ class IntelligenceReports(Resource):
 
         try:
             with db_session() as conn:
+                repository = IntelligenceRepository(conn)
+                if not repository.all_projects_owned(user_id, project_ids):
+                    return _error("project not found", 404)
                 row = build_report_service(
-                    IntelligenceRepository(conn), user_id
+                    repository, user_id
                 ).create(user_id, project_ids, results)
             return _ok({"report": _json_row(row)}, 201)
         except (TypeError, ValueError) as exc:

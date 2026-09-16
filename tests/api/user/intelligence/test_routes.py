@@ -573,6 +573,7 @@ def test_report_create_and_get_are_owner_scoped(
     project_id = str(uuid4())
     report_id = str(uuid4())
     repository = MagicMock()
+    repository.all_projects_owned.return_value = True
     repository.save_report.return_value = {
         "id": report_id,
         "user_id": "user-1",
@@ -605,6 +606,43 @@ def test_report_create_and_get_are_owner_scoped(
     assert lookup.status_code == 200
     assert lookup.json["report"]["id"] == report_id
     repository.get_report.assert_called_once_with(report_id, "user-1")
+
+
+def test_report_create_rejects_unowned_projects(
+    client, auth_headers, mock_query_service, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    repository.all_projects_owned.return_value = False
+    _patch_repository(monkeypatch, repository)
+
+    response = client.post(
+        "/api/intelligence/reports",
+        headers=auth_headers,
+        json={
+            "project_ids": [project_id],
+            "results": [mock_query_service.query.return_value.model_dump(mode="json")],
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json["message"] == "project not found"
+    repository.save_report.assert_not_called()
+
+
+def test_report_create_rejects_unvalidated_results(
+    client, auth_headers, monkeypatch
+) -> None:
+    _patch_repository(monkeypatch, MagicMock())
+
+    response = client.post(
+        "/api/intelligence/reports",
+        headers=auth_headers,
+        json={"project_ids": [str(uuid4())], "results": [{"answer": "forged"}]},
+    )
+
+    assert response.status_code == 400
+    assert "QueryResult or ComparisonResult" in response.json["message"]
 
 
 def test_report_downloads_saved_document_without_query(

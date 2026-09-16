@@ -148,6 +148,28 @@ class IntelligenceRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def all_projects_owned(
+        self,
+        user_id: str,
+        project_ids: Sequence[str],
+    ) -> bool:
+        """Return whether every requested project belongs to ``user_id``."""
+        normalized_ids = list(dict.fromkeys(str(project_id) for project_id in project_ids))
+        if not normalized_ids:
+            return False
+        where, params = _project_scope(user_id, normalized_ids)
+        result = self._conn.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS count
+                FROM intelligence_projects AS p
+                WHERE {' AND '.join(where)}
+                """
+            ),
+            params,
+        ).fetchone()
+        return int(result._mapping["count"] if result is not None else 0) == len(normalized_ids)
+
     def list_projects(self, user_id: str) -> list[dict[str, Any]]:
         """List all intelligence projects owned by ``user_id``."""
         result = self._conn.execute(

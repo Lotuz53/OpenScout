@@ -88,6 +88,21 @@ def test_project_lookup_is_owner_scoped(pg_conn, project) -> None:
     assert repo.get_project(project_id, "other") is None
 
 
+def test_all_projects_owned_requires_every_project_in_owner_scope(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    other_project = repo.create_project(
+        user_id="other",
+        repository="other/repo",
+        window_start=date(2025, 9, 14),
+        window_end=date(2026, 9, 14),
+    )
+
+    assert repo.all_projects_owned("owner", [project_id]) is True
+    assert repo.all_projects_owned("owner", [str(other_project["id"])]) is False
+    assert repo.all_projects_owned("owner", [project_id, str(other_project["id"])]) is False
+
+
 def test_sync_run_persists_summary(pg_conn, project) -> None:
     repo = IntelligenceRepository(pg_conn)
     run = repo.start_sync_run(str(project["id"]))

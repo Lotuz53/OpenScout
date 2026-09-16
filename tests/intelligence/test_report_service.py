@@ -139,6 +139,11 @@ def test_create_persists_all_fixed_sections(query_result: QueryResult) -> None:
     assert report_data["source_ids"] == ["evidence-1"]
 
 
+def test_create_rejects_unvalidated_result_mapping() -> None:
+    with pytest.raises(ValueError, match="QueryResult or ComparisonResult"):
+        ReportService().create("user-1", [PROJECT_ID], [{"answer": "forged"}])
+
+
 class StoredReports:
     """Small repository double that keeps report JSON between export attempts."""
 

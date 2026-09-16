@@ -11,8 +11,9 @@ from typing import Any
 from uuid import uuid4
 from xml.sax.saxutils import escape
 
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
+from docsgpt.intelligence.comparison import ComparisonResult
 from docsgpt.intelligence.schemas import IntelligenceModel, QueryResult
 
 
@@ -104,7 +105,7 @@ class ReportService:
         self,
         user_id: str,
         project_ids: Sequence[str],
-        results: Sequence[QueryResult],
+        results: Sequence[QueryResult | ComparisonResult],
     ) -> dict[str, Any]:
         """Build and persist a report without executing another query.
 
@@ -127,11 +128,12 @@ class ReportService:
             raise ValueError("results must be a non-empty list")
         if not results:
             raise ValueError("results must be a non-empty list")
+        validated_results = [_validate_result(result) for result in results]
 
         document = _build_report_document(
             user_id=user_id,
             project_ids=normalized_project_ids,
-            results=results,
+            results=validated_results,
         )
         report_data = document.model_dump(mode="json")
         self._memory_reports[document.id or ""] = {
@@ -296,7 +298,7 @@ def _build_report_document(
     *,
     user_id: str,
     project_ids: Sequence[str],
-    results: Sequence[QueryResult],
+    results: Sequence[QueryResult | ComparisonResult],
 ) -> ReportDocument:
     """Assemble fixed report sections from saved structured result objects."""
     views = [_result_mapping(result) for result in results]
@@ -432,6 +434,18 @@ def _result_mapping(value: Any) -> Mapping[str, Any]:
         if isinstance(result, Mapping):
             return result
     raise TypeError("results must contain QueryResult or structured mappings")
+
+
+def _validate_result(value: Any) -> QueryResult | ComparisonResult:
+    """Validate one report input against a known intelligence result schema."""
+    if isinstance(value, (QueryResult, ComparisonResult)):
+        return value
+    for model in (QueryResult, ComparisonResult):
+        try:
+            return model.model_validate(value)
+        except ValidationError:
+            continue
+    raise ValueError("results must contain QueryResult or ComparisonResult")
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
