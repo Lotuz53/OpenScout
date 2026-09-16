@@ -1310,11 +1310,13 @@ def test_stage_a_demo_has_no_uncited_fact(openscout_client) -> None:
 
 预期：报告包含事实题正确率、引用准确率、复杂问题成功率、非 GraphRAG 平均延迟、token 成本和各门槛是否通过；只有所有跟踪指标下降不超过 5 个百分点时，回归检查才返回 0。之后不得修改封存问题。
 
-- [x] **步骤 4：只记录实测结论并保存证明材料**
+- [ ] **步骤 4：只记录实测结论并保存证明材料**
 
 `README-openscout.md` 必须披露 DocsGPT 底座、列出 OpenScout 原创工作、展示三组实验、链接失败案例、说明 GitHub Issue 抽样偏差，并使用摘要中的实测值。按照 PR 要求保存截图或短视频。
 
-- [x] **步骤 5：运行完整验证并提交**
+> 当前状态：实测结论和限制已记录，但真实 UI 截图/短视频尚未捕获，因此本步骤不能标记为完成。
+
+- [ ] **步骤 5：运行完整验证并提交**
 
 运行：`ruff check .`
 
@@ -1332,7 +1334,7 @@ git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
 
-> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；完整 pytest 在收集阶段遇到仓库既有的两个 `test_routes.py` 同名模块冲突，全仓库前端 lint 仍有既有格式错误，未扩大范围修复。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。
+> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；完整 pytest 在收集阶段遇到仓库既有的两个 `test_routes.py` 同名模块冲突，全仓库前端 lint 仍有既有格式错误，未扩大范围修复。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此步骤 4 和步骤 5 仍待补齐，不能把 Task17 记为完全通过。
 
 ## 阶段 A 自检记录
 
