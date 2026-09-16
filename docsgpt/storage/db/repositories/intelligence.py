@@ -749,6 +749,30 @@ class IntelligenceRepository:
         )
         return row_to_dict(result.fetchone())
 
+    def get_report(self, report_id: str, user_id: str) -> dict[str, Any] | None:
+        """Return a report only when it belongs to ``user_id``.
+
+        Args:
+            report_id: UUID of the saved report.
+            user_id: Authenticated report owner identifier.
+
+        Returns:
+            The report row or ``None`` when it is missing or not owned.
+        """
+        result = self._conn.execute(
+            text(
+                """
+                SELECT *
+                FROM intelligence_reports
+                WHERE id = CAST(:report_id AS uuid)
+                  AND user_id = :user_id
+                """
+            ),
+            {"report_id": report_id, "user_id": user_id},
+        )
+        row = result.fetchone()
+        return row_to_dict(row) if row is not None else None
+
 
 def _analytics_scope(
     user_id: str,

@@ -1090,6 +1090,7 @@ git commit -m "feat(openscout): enforce evidence and claim confidence"
 **文件：**
 - 新建： `docsgpt/intelligence/report_service.py`
 - 修改： `docsgpt/api/user/intelligence/routes.py`
+- 修改： `docsgpt/storage/db/repositories/intelligence.py`
 - 新建： `tests/intelligence/test_report_service.py`
 - 修改： `tests/api/user/intelligence/test_routes.py`
 
@@ -1097,7 +1098,7 @@ git commit -m "feat(openscout): enforce evidence and claim confidence"
 - 输入：已保存的 `QueryResult` 对象和对比/统计结果。
 - 输出：`ReportDocument`、`ReportService.create(user_id: str, project_ids: Sequence[str], results: Sequence[QueryResult]) -> dict`、`render_markdown(report: ReportDocument) -> str`、`render_pdf(report: ReportDocument) -> bytes`、`POST /api/intelligence/reports`、`GET /api/intelligence/reports/<id>` 和 `GET /api/intelligence/reports/<id>/download?format=markdown|pdf`。
 
-- [ ] **步骤 1：编写渲染一致性和重试测试**
+- [x] **步骤 1：编写渲染一致性和重试测试**
 
 ```python
 def test_markdown_and_pdf_share_source_ids(report) -> None:
@@ -1113,21 +1114,21 @@ def test_export_retry_does_not_rerun_query(report_service, query_service) -> Non
     query_service.query.assert_not_called()
 ```
 
-- [ ] **步骤 2：运行测试并确认失败**
+- [x] **步骤 2：运行测试并确认失败**
 
 运行：`python -m pytest tests/intelligence/test_report_service.py tests/api/user/intelligence/test_routes.py -q`
 
 预期：FAIL，提示缺少报告服务或路由。
 
-- [ ] **步骤 3：实现统一报告数据结构**
+- [x] **步骤 3：实现统一报告数据结构**
 
 章节固定为：执行摘要、功能对比、反馈趋势、产品机会线索、风险与证据限制、完整来源。渲染前先保存结构化 JSON；渲染器只接受 `ReportDocument`。
 
-- [ ] **步骤 4：实现需要认证的导出接口**
+- [x] **步骤 4：实现需要认证的导出接口**
 
 Markdown 使用 UTF-8 附件响应；PDF 使用 ReportLab 和存放在合规资源目录中的内嵌中日韩字体，或复用项目现有字体。导出失败时保留报告记录，返回可重试的 500，且不得重新执行查询。
 
-- [ ] **步骤 5：验证并提交**
+- [x] **步骤 5：验证并提交**
 
 运行：`python -m pytest tests/intelligence/test_report_service.py tests/api/user/intelligence/test_routes.py -q`
 

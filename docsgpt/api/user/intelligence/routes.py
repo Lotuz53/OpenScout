@@ -13,6 +13,11 @@ from pydantic import ValidationError
 from docsgpt.intelligence.comparison import ComparisonService
 from docsgpt.intelligence.github_client import GitHubClient
 from docsgpt.intelligence.query_service import QueryService
+from docsgpt.intelligence.report_service import (
+    ReportExportError,
+    ReportNotFoundError,
+    ReportService,
+)
 from docsgpt.intelligence.schemas import QueryFilters, QueryRequest
 from docsgpt.intelligence.tasks import sync_intelligence_project
 from docsgpt.intelligence.topics import topic_trends
@@ -151,6 +156,26 @@ def _parse_comparison_payload() -> tuple[list[str], list[str], QueryFilters]:
     return list(dict.fromkeys(project_ids)), list(dict.fromkeys(dimensions)), filters
 
 
+def _parse_report_payload() -> tuple[list[str], list[Any]]:
+    """Validate project ids and saved structured results for a report."""
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        raise ValueError("JSON object required")
+
+    project_ids = payload.get("project_ids")
+    if not isinstance(project_ids, list) or not project_ids:
+        raise ValueError("project_ids must be a non-empty list")
+    if any(not isinstance(project_id, str) or not looks_like_uuid(project_id) for project_id in project_ids):
+        raise ValueError("project_ids must contain UUIDs")
+
+    results = payload.get("results")
+    if not isinstance(results, list) or not results:
+        raise ValueError("results must be a non-empty list")
+    if any(not isinstance(result, dict) for result in results):
+        raise ValueError("results must contain JSON objects")
+    return list(dict.fromkeys(project_ids)), results
+
+
 def build_query_service() -> QueryService:
     """Build the default hybrid-only query service.
 
@@ -159,6 +184,11 @@ def build_query_service() -> QueryService:
     instance remains safe when no intelligence index has been configured yet.
     """
     return QueryService()
+
+
+def build_report_service(repository: Any, user_id: str) -> ReportService:
+    """Build an owner-scoped report service for one request transaction."""
+    return ReportService(repository=repository, user_id=user_id)
 
 
 @intelligence_ns.route("/intelligence/projects")
@@ -381,8 +411,106 @@ class IntelligenceComparison(Resource):
             return _error("internal error", 500)
 
 
+@intelligence_ns.route("/intelligence/reports")
+class IntelligenceReports(Resource):
+    """Create owner-scoped reports from already-saved intelligence results."""
+
+    def post(self):
+        """Persist the structured report document before any rendering."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        try:
+            project_ids, results = _parse_report_payload()
+        except ValueError as exc:
+            return _error(str(exc), 400)
+
+        try:
+            with db_session() as conn:
+                row = build_report_service(
+                    IntelligenceRepository(conn), user_id
+                ).create(user_id, project_ids, results)
+            return _ok({"report": _json_row(row)}, 201)
+        except (TypeError, ValueError) as exc:
+            return _error(str(exc), 400)
+        except Exception:
+            logger.exception("Could not create intelligence report")
+            return _error("internal error", 500)
+
+
+@intelligence_ns.route("/intelligence/reports/<string:report_id>")
+class IntelligenceReport(Resource):
+    """Read one owner-scoped structured report."""
+
+    def get(self, report_id: str):
+        """Return persisted report JSON without invoking a query service."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        if not looks_like_uuid(report_id):
+            return _error("report_id must be a UUID", 400)
+        try:
+            with db_readonly() as conn:
+                row = build_report_service(
+                    IntelligenceRepository(conn), user_id
+                ).get(report_id)
+            return _ok({"report": _json_row(row)})
+        except ReportNotFoundError:
+            return _error("report not found", 404)
+        except Exception:
+            logger.exception("Could not get intelligence report")
+            return _error("internal error", 500)
+
+
+@intelligence_ns.route("/intelligence/reports/<string:report_id>/download")
+class IntelligenceReportDownload(Resource):
+    """Download a saved report as Markdown or PDF."""
+
+    def get(self, report_id: str):
+        """Render only the saved report document and return an attachment."""
+        user_id = _current_user()
+        if not user_id:
+            return _error("unauthorized", 401)
+        if not looks_like_uuid(report_id):
+            return _error("report_id must be a UUID", 400)
+        format_name = request.args.get("format", "markdown")
+        if format_name not in {"markdown", "pdf"}:
+            return _error("format must be markdown or pdf", 400)
+
+        try:
+            with db_readonly() as conn:
+                content = build_report_service(
+                    IntelligenceRepository(conn), user_id
+                ).export(report_id, format_name)
+            extension = "md" if format_name == "markdown" else "pdf"
+            response = make_response(content, 200)
+            response.headers["Content-Disposition"] = (
+                f'attachment; filename="openscout-report-{report_id}.{extension}"; '
+                f"filename*=UTF-8''openscout-report-{report_id}.{extension}"
+            )
+            response.headers["Content-Type"] = (
+                "text/markdown; charset=utf-8"
+                if format_name == "markdown"
+                else "application/pdf"
+            )
+            return response
+        except ReportNotFoundError:
+            return _error("report not found", 404)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        except ReportExportError:
+            logger.exception("Could not export intelligence report")
+            return _error("report export failed; retryable", 500)
+        except Exception:
+            logger.exception("Could not download intelligence report")
+            return _error("internal error", 500)
+
+
 __all__ = [
     "IntelligenceOverview",
+    "IntelligenceReport",
+    "IntelligenceReportDownload",
+    "IntelligenceReports",
     "IntelligenceProject",
     "IntelligenceProjectSync",
     "IntelligenceProjects",
@@ -391,5 +519,6 @@ __all__ = [
     "IntelligenceSyncRun",
     "IntelligenceTopics",
     "build_query_service",
+    "build_report_service",
     "intelligence_ns",
 ]

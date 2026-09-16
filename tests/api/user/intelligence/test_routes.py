@@ -11,6 +11,7 @@ from flask_restx import Api
 
 from docsgpt.api.user.intelligence.routes import intelligence_ns
 from docsgpt.intelligence.comparison import ComparisonCell, ComparisonResult, ComparisonRow
+from docsgpt.intelligence.report_service import ReportService
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
@@ -398,6 +399,132 @@ def test_list_projects_is_owner_scoped(client, auth_headers, monkeypatch) -> Non
     assert response.status_code == 200
     assert response.json["projects"][0]["id"] == project_id
     repository.list_projects.assert_called_once_with("user-1")
+
+
+def test_reports_require_auth(client) -> None:
+    """Report creation and retrieval must use the existing auth boundary."""
+    assert client.post("/api/intelligence/reports", json={}).status_code == 401
+    assert client.get(f"/api/intelligence/reports/{uuid4()}").status_code == 401
+    assert (
+        client.get(f"/api/intelligence/reports/{uuid4()}/download?format=pdf").status_code
+        == 401
+    )
+
+
+def test_report_create_and_get_are_owner_scoped(
+    client, auth_headers, mock_query_service, monkeypatch
+) -> None:
+    """Report JSON is saved and looked up through the authenticated owner."""
+    project_id = str(uuid4())
+    report_id = str(uuid4())
+    repository = MagicMock()
+    repository.save_report.return_value = {
+        "id": report_id,
+        "user_id": "user-1",
+        "report_data": ReportService()
+        .create(
+            "user-1",
+            [project_id],
+            [mock_query_service.query.return_value],
+        ),
+    }
+    repository.get_report.return_value = repository.save_report.return_value
+    _patch_repository(monkeypatch, repository)
+    result_data = mock_query_service.query.return_value.model_dump(mode="json")
+
+    response = client.post(
+        "/api/intelligence/reports",
+        headers=auth_headers,
+        json={"project_ids": [project_id], "results": [result_data]},
+    )
+
+    assert response.status_code == 201
+    repository.save_report.assert_called_once()
+    assert repository.save_report.call_args.args[0] == "user-1"
+    assert repository.save_report.call_args.args[1]["project_ids"] == [project_id]
+
+    lookup = client.get(
+        f"/api/intelligence/reports/{report_id}", headers=auth_headers
+    )
+
+    assert lookup.status_code == 200
+    assert lookup.json["report"]["id"] == report_id
+    repository.get_report.assert_called_once_with(report_id, "user-1")
+
+
+def test_report_downloads_saved_document_without_query(
+    client, auth_headers, mock_query_service, monkeypatch
+) -> None:
+    """Markdown and PDF downloads use the saved report document directly."""
+    project_id = str(uuid4())
+    report_id = str(uuid4())
+    report_data = ReportService().create(
+        "user-1",
+        [project_id],
+        [mock_query_service.query.return_value],
+    )
+    repository = MagicMock()
+    repository.get_report.return_value = {
+        "id": report_id,
+        "user_id": "user-1",
+        "report_data": report_data,
+    }
+    _patch_repository(monkeypatch, repository)
+
+    markdown_response = client.get(
+        f"/api/intelligence/reports/{report_id}/download?format=markdown",
+        headers=auth_headers,
+    )
+    pdf_response = client.get(
+        f"/api/intelligence/reports/{report_id}/download?format=pdf",
+        headers=auth_headers,
+    )
+
+    assert markdown_response.status_code == 200
+    assert markdown_response.mimetype == "text/markdown"
+    assert "filename*=UTF-8''" in markdown_response.headers["Content-Disposition"]
+    assert "执行摘要" in markdown_response.data.decode("utf-8")
+    assert pdf_response.status_code == 200
+    assert pdf_response.mimetype == "application/pdf"
+    assert pdf_response.data.startswith(b"%PDF")
+    assert mock_query_service.query.call_count == 0
+
+
+def test_report_export_failure_is_retryable_and_keeps_row(
+    client, auth_headers, monkeypatch
+) -> None:
+    """A rendering error returns 500 without deleting the saved report."""
+    report_id = str(uuid4())
+    repository = MagicMock()
+    repository.get_report.return_value = {
+        "id": report_id,
+        "user_id": "user-1",
+        "report_data": {
+            "title": "OpenScout AI 产品情报报告",
+            "user_id": "user-1",
+            "project_ids": [],
+            "sections": [],
+            "sources": [],
+        },
+    }
+    _patch_repository(monkeypatch, repository)
+
+    def fail_export(_report):
+        raise RuntimeError("font unavailable")
+
+    monkeypatch.setattr(
+        "docsgpt.intelligence.report_service.render_pdf", fail_export
+    )
+    response = client.get(
+        f"/api/intelligence/reports/{report_id}/download?format=pdf",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    assert response.json["success"] is False
+    assert "retry" in response.json["message"]
+    repository.get_report.assert_called_once_with(report_id, "user-1")
+    repository.delete_report.assert_not_called()
 
 
 def test_stage_a_seed_contains_exact_repositories() -> None:
