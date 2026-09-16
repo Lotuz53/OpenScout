@@ -16,11 +16,7 @@ export type APIKeyData = {
 };
 
 export type LogEventType =
-  | 'chat'
-  | 'schedule'
-  | 'webhook'
-  | 'workflow'
-  | 'system';
+  'chat' | 'schedule' | 'webhook' | 'workflow' | 'system';
 
 export type LogData = {
   id: string;

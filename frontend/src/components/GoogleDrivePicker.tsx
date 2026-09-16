@@ -123,8 +123,7 @@ const GoogleDrivePicker: React.FC<GoogleDrivePickerProps> = ({
 
     try {
       const clientId: string = envVar('VITE_GOOGLE_CLIENT_ID');
-      const developerKey: string =
-        envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
+      const developerKey: string = envVar('VITE_GOOGLE_PICKER_API_KEY') ?? '';
 
       // Derive appId from clientId (extract numeric part before first dash)
       const appId = clientId ? clientId.split('-')[0] : null;

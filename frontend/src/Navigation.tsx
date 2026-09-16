@@ -321,7 +321,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
       {!navOpen && !isMobile && !isTablet && (
         <div
           ref={navRef}
-          className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex">
+          className="bg-sidebar border-border fixed top-0 left-0 z-10 hidden h-full w-14 flex-col items-center gap-2 border-r py-3 lg:flex"
+        >
           <Button
             type="button"
             variant="ghost"
@@ -398,8 +399,9 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
         </div>
       )}
       <div
-        className={`${!navOpen && '-ml-96 md:-ml-72'
-          } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
+        className={`${
+          !navOpen && '-ml-96 md:-ml-72'
+        } bg-sidebar dark:border-r-sidebar-border fixed top-0 z-20 flex h-full w-72 flex-col border-r border-b-0 transition-all duration-300 ease-in-out dark:text-white`}
       >
         <div
           className={
@@ -447,7 +449,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
             resetConversation();
           }}
           className={({ isActive }) =>
-            `${isActive ? 'bg-transparent' : ''
+            `${
+              isActive ? 'bg-transparent' : ''
             } group border-sidebar-border hover:border-sidebar-border sticky mx-4 mt-4 flex cursor-pointer items-center gap-2.5 rounded-3xl border p-3 hover:bg-transparent dark:text-white`
           }
         >
@@ -504,10 +507,11 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                   {recentAgents.map((agent, idx) => (
                     <div
                       key={idx}
-                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${agent.id === selectedAgent?.id && !conversationId
+                      className={`group hover:bg-sidebar-accent mx-4 my-auto mt-4 flex h-9 cursor-pointer items-center justify-between rounded-3xl pl-4 ${
+                        agent.id === selectedAgent?.id && !conversationId
                           ? 'bg-sidebar-accent'
                           : ''
-                        }`}
+                      }`}
                       onClick={() => handleAgentClick(agent)}
                     >
                       <div className="flex items-center gap-2">
@@ -557,7 +561,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                     }
                   }}
                   className={({ isActive }) =>
-                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${isActive ? 'bg-sidebar-accent' : ''
+                    `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2 rounded-3xl pl-4 ${
+                      isActive ? 'bg-sidebar-accent' : ''
                     }`
                   }
                 >
@@ -585,7 +590,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
                 dispatch(setSelectedAgent(null));
               }}
               className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
+                `hover:bg-sidebar-accent mx-4 my-auto mt-2 flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
+                  isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
@@ -601,14 +607,14 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           )}
           {conversations?.data && conversations.data.length > 0 ? (
             <div className="mt-7">
-              <div className="my-auto mt-2 ml-2.75 p-1 flex h-9 items-center justify-between gap-4 rounded-3xl">
+              <div className="my-auto mt-2 ml-2.75 flex h-9 items-center justify-between gap-4 rounded-3xl p-1">
                 <p className="mt-1 ml-4 text-sm font-semibold">{t('chats')}</p>
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   onClick={() => setSearchOpen(true)}
-                  className="mr-1 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-full"
+                  className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent mr-1 rounded-full"
                   aria-label={t('modals.searchConversations.searchPlaceholder')}
                   title={t('modals.searchConversations.searchPlaceholder')}
                 >
@@ -653,7 +659,8 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
               }}
               to="/settings"
               className={({ isActive }) =>
-                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${isActive ? 'bg-sidebar-accent' : ''
+                `hover:bg-sidebar-accent mx-4 my-auto flex h-9 cursor-pointer items-center gap-2.5 rounded-3xl pl-3 ${
+                  isActive ? 'bg-sidebar-accent' : ''
                 }`
               }
             >
@@ -728,7 +735,6 @@ export default function Navigation({ navOpen, setNavOpen }: NavigationProps) {
           >
             <Menu className="size-5" strokeWidth={1.75} />
           </Button>
-
         </div>
       </div>
       <ConfirmationModal

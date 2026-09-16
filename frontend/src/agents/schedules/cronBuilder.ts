@@ -1,11 +1,7 @@
 import type { Schedule } from '../types/schedule';
 
 export type ScheduleFrequency =
-  | 'once'
-  | 'daily'
-  | 'weekly'
-  | 'monthly'
-  | 'yearly';
+  'once' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export type ScheduleFormValues = {
   frequency: ScheduleFrequency;
