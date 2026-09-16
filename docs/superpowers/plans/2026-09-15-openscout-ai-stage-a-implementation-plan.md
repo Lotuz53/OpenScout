@@ -1334,7 +1334,7 @@ git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
 
-> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；完整 pytest 在收集阶段遇到仓库既有的两个 `test_routes.py` 同名模块冲突，全仓库前端 lint 仍有既有格式错误，未扩大范围修复。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此步骤 4 和步骤 5 仍待补齐，不能把 Task17 记为完全通过。
+> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。截图/短视频路径已记录在 `docs/openscout/limitations.md`，媒体文件需 PR 前由维护者在真实 UI 中捕获。因此步骤 4 和步骤 5 仍待补齐，不能把 Task17 记为完全通过。
 
 ## 阶段 A 自检记录
 

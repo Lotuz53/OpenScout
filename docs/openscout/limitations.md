@@ -34,6 +34,15 @@ Stage A holdout 的事实题正确率为 **0.900**（门槛 0.800），比较/�
 - 80 条题目中 60 条属于开发集，20 条 holdout 已封存；选择方案后不得编辑、重排
   或替换 holdout。需要改变答案或快照时，应建立新的 snapshot 和 holdout split。
 
+## 全量验证环境说明
+
+2026-09-17 使用项目 `.venv` 执行 `KMP_DUPLICATE_LIB_OK=TRUE python -m pytest`，共收集
+10,556 项（2 项跳过），结果为 **10,085 passed、451 skipped、22 failed**。13 项
+GraphRAG 测试因当前环境未安装 `scipy` 而回退到经典检索，9 项 MCP/BYOM 测试因沙箱
+DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些
+是现有测试的依赖或网络环境阻断，不属于 OpenScout Stage A 路径；在完整依赖和正常
+网络解析的 CI/开发环境中复测前，不将该结果表述为全仓库通过，也不据此改变产品规格。
+
 ## 产品范围限制
 
 Stage A 固定为三个仓库和一个时间窗口，仍缺少 Stage B 计划中的任意仓库接入、增量
