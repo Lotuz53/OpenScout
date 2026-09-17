@@ -199,6 +199,35 @@ def test_sync_run_persists_summary(pg_conn, project) -> None:
     assert finished["counts"]["issue"] == 1
 
 
+def test_sync_run_persists_local_failure_summary(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    run = repo.start_sync_run(str(project["id"]))
+    summary = SyncSummary(
+        status="failed",
+        counts={},
+        failures=[
+            SyncFailure(
+                source_type="sync",
+                category="local",
+                retryable=False,
+                message="FAISS save failed",
+            )
+        ],
+        coverage=Coverage(
+            repositories=["langgenius/dify"],
+            date_from=date(2025, 9, 14),
+            date_to=date(2026, 9, 14),
+            counts={},
+        ),
+    )
+
+    finished = repo.finish_sync_run(str(run["id"]), summary)
+
+    assert finished["status"] == "failed"
+    assert finished["failures"][0]["source_type"] == "sync"
+    assert finished["failures"][0]["category"] == "local"
+
+
 def test_overview_includes_latest_owner_sync_run(
     pg_conn,
     project,

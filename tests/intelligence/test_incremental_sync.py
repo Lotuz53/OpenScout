@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from docsgpt.intelligence.github_client import GitHubRateLimitError
 from docsgpt.intelligence.normalizer import normalize_release
 from docsgpt.intelligence.schemas import SourceType
@@ -39,6 +41,7 @@ class MemoryRepository:
         *,
         last_synced_at=PREVIOUS_SYNC,
         external_updated_at=None,
+        finish_error=None,
     ) -> None:
         self.project = {
             "id": PROJECT_ID,
@@ -51,6 +54,9 @@ class MemoryRepository:
         }
         self.records = {record["id"]: dict(record)} if record else {}
         self._run_number = 0
+        self.finished_runs = {}
+        self.finish_error = finish_error
+        self.status_calls = []
 
     def get_project(self, project_id: str, user_id: str):
         assert (project_id, user_id) == (PROJECT_ID, "u1")
@@ -61,6 +67,9 @@ class MemoryRepository:
         return {"id": f"sync-{self._run_number}"}
 
     def finish_sync_run(self, run_id, summary):
+        if self.finish_error is not None:
+            raise self.finish_error
+        self.finished_runs[run_id] = summary
         return {"id": run_id, "status": summary.status}
 
     def upsert_record(self, project_id, record, *, sync_id=None):
@@ -134,6 +143,9 @@ class MemoryRepository:
         last_synced_at=None,
         external_updated_at=None,
     ):
+        self.status_calls.append(
+            (project_id, user_id, status, last_synced_at, external_updated_at)
+        )
         self.project["status"] = status
         if last_synced_at is not None:
             self.project["last_synced_at"] = last_synced_at
@@ -256,3 +268,34 @@ def test_partial_sync_does_not_confirm_missing_records() -> None:
     assert repository.get_record("record-1")["active"] is True
     assert repository.project["external_updated_at"] == previous_external_update
     indexer.delete_records.assert_not_called()
+
+
+def test_local_index_failure_finishes_run_and_project_as_failed() -> None:
+    repository = MemoryRepository()
+    github = FakeGitHub([release_payload()])
+    indexer = MagicMock()
+    indexer.replace_records.side_effect = RuntimeError("FAISS save failed")
+
+    with pytest.raises(RuntimeError, match="FAISS save failed"):
+        make_service(repository, github, indexer).run_incremental(PROJECT_ID, "u1")
+
+    assert repository.project["status"] == "failed"
+    failed_summary = repository.finished_runs["sync-1"]
+    assert failed_summary.status == "failed"
+    assert failed_summary.failures[-1].source_type == "sync"
+    assert failed_summary.failures[-1].category == "local"
+    assert "FAISS save failed" in failed_summary.failures[-1].message
+
+
+def test_local_failure_still_updates_project_when_run_finalization_fails() -> None:
+    repository = MemoryRepository(finish_error=RuntimeError("finish failed"))
+    github = FakeGitHub([release_payload()])
+    indexer = MagicMock()
+    indexer.replace_records.side_effect = RuntimeError("FAISS save failed")
+
+    with pytest.raises(RuntimeError, match="FAISS save failed"):
+        make_service(repository, github, indexer).run_incremental(PROJECT_ID, "u1")
+
+    assert (PROJECT_ID, "u1", "failed") in [
+        call[:3] for call in repository.status_calls
+    ]

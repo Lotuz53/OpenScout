@@ -175,22 +175,47 @@ class SyncService:
 
         run_id = self._start_sync_run(project_id)
         sync_id = run_id or str(uuid4())
-        self._set_project_status(project_id, user_id, "syncing")
+        try:
+            self._set_project_status(project_id, user_id, "syncing")
 
-        document_collector = getattr(self.github, "iter_documents", None)
-        if callable(document_collector):
-            document_ok, document_records, document_capped, document_summary = self._run_source(
+            document_collector = getattr(self.github, "iter_documents", None)
+            if callable(document_collector):
+                document_ok, document_records, document_capped, document_summary = self._run_source(
+                    project_id=project_id,
+                    source_type=SourceType.DOCUMENTATION,
+                    user_id=user_id,
+                    producer=lambda: (
+                        [
+                            _normalize_document_item(
+                                repository_name,
+                                item,
+                                retrieved_at,
+                            )
+                            for item in document_collector(repository_name, since, until)
+                        ],
+                        False,
+                    ),
+                    counts=counts,
+                    failures=failures,
+                    observed_dates=observed_dates,
+                    sync_id=sync_id,
+                )
+                if document_ok:
+                    successful_sources.add(SourceType.DOCUMENTATION)
+                    completed_batches[SourceType.DOCUMENTATION] = document_records
+                    changed_records += document_summary.changed_records
+                    unchanged_records += document_summary.unchanged_records
+                    embedded_chunks += document_summary.embedded_chunks
+                capped = capped or document_capped
+
+            release_ok, release_records, release_capped, release_summary = self._run_source(
                 project_id=project_id,
-                source_type=SourceType.DOCUMENTATION,
+                source_type=SourceType.RELEASE,
                 user_id=user_id,
                 producer=lambda: (
                     [
-                        _normalize_document_item(
-                            repository_name,
-                            item,
-                            retrieved_at,
-                        )
-                        for item in document_collector(repository_name, since, until)
+                        normalize_release(repository_name, raw, retrieved_at)
+                        for raw in self.github.iter_releases(repository_name, since, until)
                     ],
                     False,
                 ),
@@ -199,139 +224,148 @@ class SyncService:
                 observed_dates=observed_dates,
                 sync_id=sync_id,
             )
-            if document_ok:
-                successful_sources.add(SourceType.DOCUMENTATION)
-                completed_batches[SourceType.DOCUMENTATION] = document_records
-                changed_records += document_summary.changed_records
-                unchanged_records += document_summary.unchanged_records
-                embedded_chunks += document_summary.embedded_chunks
-            capped = capped or document_capped
+            if release_ok:
+                successful_sources.add(SourceType.RELEASE)
+                completed_batches[SourceType.RELEASE] = release_records
+                changed_records += release_summary.changed_records
+                unchanged_records += release_summary.unchanged_records
+                embedded_chunks += release_summary.embedded_chunks
+            capped = capped or release_capped
 
-        release_ok, release_records, release_capped, release_summary = self._run_source(
-            project_id=project_id,
-            source_type=SourceType.RELEASE,
-            user_id=user_id,
-            producer=lambda: (
-                [
-                    normalize_release(repository_name, raw, retrieved_at)
-                    for raw in self.github.iter_releases(repository_name, since, until)
-                ],
-                False,
-            ),
-            counts=counts,
-            failures=failures,
-            observed_dates=observed_dates,
-            sync_id=sync_id,
-        )
-        if release_ok:
-            successful_sources.add(SourceType.RELEASE)
-            completed_batches[SourceType.RELEASE] = release_records
-            changed_records += release_summary.changed_records
-            unchanged_records += release_summary.unchanged_records
-            embedded_chunks += release_summary.embedded_chunks
-        capped = capped or release_capped
+            issue_raws: list[Mapping[str, Any]] | None = None
 
-        issue_raws: list[Mapping[str, Any]] | None = None
+            def collect_issues() -> tuple[list[IntelligenceRecord], bool]:
+                nonlocal issue_raws
+                issue_raws = list(self.github.iter_issues(repository_name, since, until))
+                return (
+                    [
+                        normalize_issue(repository_name, raw, retrieved_at)
+                        for raw in issue_raws
+                    ],
+                    len(issue_raws) >= ISSUE_LIMIT,
+                )
 
-        def collect_issues() -> tuple[list[IntelligenceRecord], bool]:
-            nonlocal issue_raws
-            issue_raws = list(self.github.iter_issues(repository_name, since, until))
-            return (
-                [
-                    normalize_issue(repository_name, raw, retrieved_at)
-                    for raw in issue_raws
-                ],
-                len(issue_raws) >= ISSUE_LIMIT,
-            )
-
-        issue_ok, issue_records, issue_capped, issue_summary = self._run_source(
-            project_id=project_id,
-            source_type=SourceType.ISSUE,
-            user_id=user_id,
-            producer=collect_issues,
-            counts=counts,
-            failures=failures,
-            observed_dates=observed_dates,
-            sync_id=sync_id,
-        )
-        if issue_ok:
-            successful_sources.add(SourceType.ISSUE)
-            completed_batches[SourceType.ISSUE] = issue_records
-            changed_records += issue_summary.changed_records
-            unchanged_records += issue_summary.unchanged_records
-            embedded_chunks += issue_summary.embedded_chunks
-        capped = capped or issue_capped
-
-        if issue_ok and issue_raws is not None:
-            comment_ok, comment_records, comment_capped, comment_summary = self._run_source(
+            issue_ok, issue_records, issue_capped, issue_summary = self._run_source(
                 project_id=project_id,
-                source_type=SourceType.ISSUE_COMMENT,
+                source_type=SourceType.ISSUE,
                 user_id=user_id,
-                producer=lambda: self._collect_comments(
-                    repository_name,
-                    issue_raws,
-                    retrieved_at,
-                ),
+                producer=collect_issues,
                 counts=counts,
                 failures=failures,
                 observed_dates=observed_dates,
                 sync_id=sync_id,
             )
-            if comment_ok:
-                successful_sources.add(SourceType.ISSUE_COMMENT)
-                completed_batches[SourceType.ISSUE_COMMENT] = comment_records
-                changed_records += comment_summary.changed_records
-                unchanged_records += comment_summary.unchanged_records
-                embedded_chunks += comment_summary.embedded_chunks
-            capped = capped or comment_capped
+            if issue_ok:
+                successful_sources.add(SourceType.ISSUE)
+                completed_batches[SourceType.ISSUE] = issue_records
+                changed_records += issue_summary.changed_records
+                unchanged_records += issue_summary.unchanged_records
+                embedded_chunks += issue_summary.embedded_chunks
+            capped = capped or issue_capped
 
-        deactivated_record_ids: list[str] = []
-        if not failures and not capped:
-            deactivated_record_ids = self._reconcile_missing(
+            if issue_ok and issue_raws is not None:
+                comment_ok, comment_records, comment_capped, comment_summary = self._run_source(
+                    project_id=project_id,
+                    source_type=SourceType.ISSUE_COMMENT,
+                    user_id=user_id,
+                    producer=lambda: self._collect_comments(
+                        repository_name,
+                        issue_raws,
+                        retrieved_at,
+                    ),
+                    counts=counts,
+                    failures=failures,
+                    observed_dates=observed_dates,
+                    sync_id=sync_id,
+                )
+                if comment_ok:
+                    successful_sources.add(SourceType.ISSUE_COMMENT)
+                    completed_batches[SourceType.ISSUE_COMMENT] = comment_records
+                    changed_records += comment_summary.changed_records
+                    unchanged_records += comment_summary.unchanged_records
+                    embedded_chunks += comment_summary.embedded_chunks
+                capped = capped or comment_capped
+
+            deactivated_record_ids: list[str] = []
+            if not failures and not capped:
+                deactivated_record_ids = self._reconcile_missing(
+                    project_id,
+                    completed_batches,
+                )
+
+            status = _summary_status(successful_sources, failures)
+            last_synced_at = retrieved_at if not failures else None
+            cursor = (
+                SyncCursor(
+                    last_success_at=retrieved_at,
+                    external_updated_at=_latest_external_update(completed_batches.values()),
+                )
+                if not failures
+                else None
+            )
+            coverage = Coverage(
+                repositories=[repository_name],
+                date_from=min(observed_dates) if observed_dates else window_start,
+                date_to=max(observed_dates) if observed_dates else window_end,
+                counts=counts,
+                capped=capped,
+                last_synced_at=last_synced_at,
+            )
+            summary = IncrementalSyncSummary(
+                status=status,
+                counts=counts,
+                failures=failures,
+                coverage=coverage,
+                cursor=cursor,
+                changed_records=changed_records,
+                unchanged_records=unchanged_records,
+                embedded_chunks=embedded_chunks,
+                deactivated_record_ids=deactivated_record_ids,
+            )
+
+            if run_id is not None:
+                self._finish_sync_run(run_id, summary)
+            self._set_project_status(
                 project_id,
-                completed_batches,
+                user_id,
+                "ready" if status == "complete" else status,
+                last_synced_at=last_synced_at,
+                external_updated_at=cursor.external_updated_at if cursor else None,
             )
-
-        status = _summary_status(successful_sources, failures)
-        last_synced_at = retrieved_at if not failures else None
-        cursor = (
-            SyncCursor(
-                last_success_at=retrieved_at,
-                external_updated_at=_latest_external_update(completed_batches.values()),
+            return summary
+        except Exception as exc:
+            failure = SyncFailure(
+                source_type="sync",
+                category="local",
+                retryable=False,
+                message=str(exc),
             )
-            if not failures
-            else None
-        )
-        coverage = Coverage(
-            repositories=[repository_name],
-            date_from=min(observed_dates) if observed_dates else window_start,
-            date_to=max(observed_dates) if observed_dates else window_end,
-            counts=counts,
-            capped=capped,
-            last_synced_at=last_synced_at,
-        )
-        summary = IncrementalSyncSummary(
-            status=status,
-            counts=counts,
-            failures=failures,
-            coverage=coverage,
-            cursor=cursor,
-            changed_records=changed_records,
-            unchanged_records=unchanged_records,
-            embedded_chunks=embedded_chunks,
-            deactivated_record_ids=deactivated_record_ids,
-        )
-
-        if run_id is not None:
-            self._finish_sync_run(run_id, summary)
-        self._set_project_status(
-            project_id,
-            user_id,
-            "ready" if status == "complete" else status,
-            last_synced_at=last_synced_at,
-            external_updated_at=cursor.external_updated_at if cursor else None,
-        )
-        return summary
+            failed_summary = self._build_local_failure_summary(
+                repository_name=repository_name,
+                window_start=window_start,
+                window_end=window_end,
+                retrieved_at=retrieved_at,
+                counts=counts,
+                failures=[*failures, failure],
+                observed_dates=observed_dates,
+                capped=capped,
+                changed_records=changed_records,
+                unchanged_records=unchanged_records,
+                embedded_chunks=embedded_chunks,
+            )
+            if run_id is not None:
+                try:
+                    self._finish_sync_run(run_id, failed_summary)
+                except Exception:
+                    logger.exception("Could not mark sync run %s as failed", run_id)
+            try:
+                self._set_project_status(project_id, user_id, "failed")
+            except Exception:
+                logger.exception(
+                    "Could not mark intelligence project %s as failed",
+                    project_id,
+                )
+            raise
 
     def _run_source(
         self,
@@ -723,6 +757,43 @@ class SyncService:
                         "external_updated_at": external_updated_at,
                     },
                 )
+
+    def _build_local_failure_summary(
+        self,
+        *,
+        repository_name: str,
+        window_start: date,
+        window_end: date,
+        retrieved_at: datetime,
+        counts: dict[SourceType, int],
+        failures: list[SyncFailure],
+        observed_dates: list[date],
+        capped: bool,
+        changed_records: int,
+        unchanged_records: int,
+        embedded_chunks: int,
+    ) -> IncrementalSyncSummary:
+        """Build a terminal summary for a local synchronization failure."""
+        del retrieved_at
+        coverage = Coverage(
+            repositories=[repository_name],
+            date_from=min(observed_dates) if observed_dates else window_start,
+            date_to=max(observed_dates) if observed_dates else window_end,
+            counts=counts,
+            capped=capped,
+            last_synced_at=None,
+        )
+        return IncrementalSyncSummary(
+            status="failed",
+            counts=counts,
+            failures=failures,
+            coverage=coverage,
+            cursor=None,
+            changed_records=changed_records,
+            unchanged_records=unchanged_records,
+            embedded_chunks=embedded_chunks,
+            deactivated_record_ids=[],
+        )
 
     @contextmanager
     def _repository_context(self) -> Any:
