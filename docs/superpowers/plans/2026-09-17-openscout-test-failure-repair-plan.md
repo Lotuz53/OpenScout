@@ -28,7 +28,7 @@
 - Consumes: production `docsgpt.api.user.tools.mcp.validate_url` and the existing `MCPTool` mocks.
 - Produces: an explicit test-only `_allow_public_mcp_url` fixture used only by the five endpoint branch tests that already mock network behavior.
 
-- [ ] **Step 1: Confirm the current focused failure set**
+- [x] **Step 1: Confirm the current focused failure set**
 
 Run:
 
@@ -40,7 +40,7 @@ KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest \
 
 Expected before the change: the five endpoint tests using `https://example.com/mcp` fail with `Invalid MCP server URL: Access to private/internal networks is not allowed`; the lower-level URL validation tests remain green.
 
-- [ ] **Step 2: Add a test-only URL-validation fixture**
+- [x] **Step 2: Add a test-only URL-validation fixture**
 
 Add this fixture near the existing `app` fixture:
 
@@ -65,13 +65,13 @@ TestMCPServerSave.test_creates_mcp_tool_successfully
 
 Do not apply the fixture to `TestValidateMcpServerUrl`; its real SSRF assertions must continue to execute.
 
-- [ ] **Step 3: Run the focused MCP suite**
+- [x] **Step 3: Run the focused MCP suite**
 
 Run the command from Step 1.
 
 Expected: every test in `test_tools_mcp_pg.py` passes, including the real `127.0.0.1` rejection test.
 
-- [ ] **Step 4: Review and commit the MCP test-only change**
+- [x] **Step 4: Review and commit the MCP test-only change**
 
 Run:
 
@@ -84,7 +84,7 @@ git commit -m "test(openscout): isolate mcp endpoint url fixtures"
 
 The staged file list must contain only `tests/api/user/test_tools_mcp_pg.py`; `AGENTS.md` must remain unstaged.
 
-- [ ] **Step 5: Push the completed MCP task**
+- [x] **Step 5: Push the completed MCP task**
 
 Run separately:
 
