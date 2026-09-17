@@ -38,14 +38,13 @@ Stage A holdout 的事实题正确率为 **0.900**（门槛 0.800），比较/�
 
 2026-09-17 使用项目 `.venv` 在非沙箱环境执行
 `KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest --postgresql-port=55433`，结果为
-**10,088 passed、451 skipped、22 failed、4 warnings**（耗时 380.80 秒）。固定端口绕过了
-`pytest-postgresql`/`port_for` 在当前 macOS 沙箱中无法选择临时端口的问题；本次剩余失败集中在
-MCP 私有地址测试夹具、BYOM 测试环境将 `api.mistral.ai` 解析为保留地址，以及 GraphRAG 测试缺少
-`scipy`/触发回退路径。OpenScout intelligence 测试和字体嵌入测试通过。`ruff check .` 通过；
+**10,110 passed、451 skipped、4 warnings**（耗时 374.40 秒）。固定端口绕过了
+`pytest-postgresql`/`port_for` 在当前 macOS 沙箱中无法选择临时端口的问题；此前的 MCP、BYOM
+和 GraphRAG 环境性失败已分别通过测试夹具隔离和补齐 SciPy 核心依赖解决。OpenScout intelligence
+测试和字体嵌入测试通过。`ruff check .` 通过；
 `frontend` 的 lint 和生产构建均以退出码 0 完成，lint 有 320 条既有 warning，构建提示 Node 20.15
-低于 Vite 推荐的 20.19+ 以及既有大 chunk warning。这些是当前测试/工具环境与既有测试阻断，不属于
-OpenScout Stage A 实现缺陷；在完整依赖、可用网络解析和匹配的 Node 版本环境中复测前，不将该结果
-表述为全仓库通过，也不据此改变产品规格。
+低于 Vite 推荐的 20.19+ 以及既有大 chunk warning。后端全量验证已通过；引用精确率门槛和连续短视频
+仍按上文限制保留，不能据此宣称 Stage A 的产品质量门槛全部通过，也不改变产品规格。
 
 ## 产品范围限制
 

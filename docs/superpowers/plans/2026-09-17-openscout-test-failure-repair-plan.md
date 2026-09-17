@@ -256,17 +256,17 @@ The staged file list must contain only the canonical dependency file, its lockfi
 - Consumes: the passing focused test groups and the existing Stage A validation record.
 - Produces: an accurate full-suite result and Task 17 Step 5 status.
 
-- [ ] **Step 1: Run Ruff**
+- [x] **Step 1: Run Ruff**
 
 Run:
 
 ```bash
-ruff check .
+.venv/bin/ruff check .
 ```
 
 Expected: exit code 0.
 
-- [ ] **Step 2: Run the complete backend suite in the known-good PostgreSQL environment**
+- [x] **Step 2: Run the complete backend suite in the known-good PostgreSQL environment**
 
 Run:
 
@@ -277,11 +277,11 @@ KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest \
 
 Expected: exit code 0 with no failed or errored tests. Preserve the exact pass/skip/warning counts and duration from the command output.
 
-- [ ] **Step 3: Update the validation records from measured output**
+- [x] **Step 3: Update the validation records from measured output**
 
 Replace the old `10,088 passed、451 skipped、22 failed` statement in both files with the new measured result. If the full suite is green, change only Task 17 Step 5 from `[ ]` to `[x]`; keep the separate holdout citation limitation and pending demo video unchanged.
 
-- [ ] **Step 4: Validate the documentation diff**
+- [x] **Step 4: Validate the documentation diff**
 
 Run:
 
@@ -291,7 +291,7 @@ git diff --check
 
 Expected: exit code 0 and no changes outside the two validation records plus the user's pre-existing `AGENTS.md` modification.
 
-- [ ] **Step 5: Commit and push the final validation record**
+- [x] **Step 5: Commit and push the final validation record**
 
 Run:
 
