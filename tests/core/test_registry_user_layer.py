@@ -8,6 +8,7 @@ explicit invalidate_user clears the cache.
 
 from __future__ import annotations
 
+import ipaddress
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
@@ -50,6 +51,14 @@ def _make_settings(**overrides):
 @contextmanager
 def _yield(conn):
     yield conn
+
+
+@pytest.fixture
+def _stable_public_model_dns(monkeypatch):
+    monkeypatch.setattr(
+        "docsgpt.security.safe_url._resolve",
+        lambda _host: [ipaddress.ip_address("104.18.0.1")],
+    )
 
 
 @pytest.mark.unit
@@ -163,7 +172,9 @@ class TestPerUserLayer:
 
 @pytest.mark.unit
 class TestLLMCreatorDispatchUsesUpstreamModelId:
-    def test_llmcreator_sends_upstream_id_not_uuid(self, pg_conn):
+    def test_llmcreator_sends_upstream_id_not_uuid(
+        self, pg_conn, _stable_public_model_dns
+    ):
         """End-to-end: LLMCreator with a BYOM uuid must construct the
         OpenAILLM with the user's upstream model name (e.g.
         ``mistral-large-latest``), not the registry uuid."""
@@ -209,7 +220,9 @@ class TestLLMCreatorDispatchUsesUpstreamModelId:
         assert captured["base_url"] == "https://api.mistral.ai/v1"
         assert captured["model_id"] == "mistral-large-latest"  # NOT the uuid!
 
-    def test_llmcreator_forwards_byom_capabilities(self, pg_conn):
+    def test_llmcreator_forwards_byom_capabilities(
+        self, pg_conn, _stable_public_model_dns
+    ):
         """LLMCreator must thread the registry-resolved ``capabilities``
         into the LLM. Without it the OpenAILLM hard-codes ``True`` for
         tools/structured output and advertises image attachments

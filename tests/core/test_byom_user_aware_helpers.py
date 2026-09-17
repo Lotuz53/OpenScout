@@ -12,6 +12,7 @@ P1 #3 — covered indirectly: the route already accepts a user_id; this
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
@@ -72,6 +73,14 @@ def _make_settings(**overrides):
 @contextmanager
 def _yield(conn):
     yield conn
+
+
+@pytest.fixture
+def _stable_public_model_dns(monkeypatch):
+    monkeypatch.setattr(
+        "docsgpt.security.safe_url._resolve",
+        lambda _host: [ipaddress.ip_address("104.18.0.1")],
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -586,7 +595,9 @@ class TestSharedAgentResolvesOwnerBYOM:
         assert sp.model_id == owner_model["id"]
         assert sp.model_user_id == "owner"
 
-    def test_classic_rag_rephrase_resolves_owner_byom(self, pg_conn, monkeypatch):
+    def test_classic_rag_rephrase_resolves_owner_byom(
+        self, pg_conn, monkeypatch, _stable_public_model_dns
+    ):
         """ClassicRAG must resolve a BYOM model_id through LLMCreator so
         the rephrase LLM gets the owner's api_key/base_url and dispatches
         the upstream model name (e.g. ``mistral-large-latest``) — not the
@@ -1206,7 +1217,7 @@ class TestNonAgentCallSitesUseUpstreamId:
 @pytest.mark.unit
 class TestAgentSendsUpstreamModelId:
     def test_llm_gen_passes_upstream_id_to_provider(
-        self, pg_conn, byom_model
+        self, pg_conn, byom_model, _stable_public_model_dns
     ):
         """End-to-end: ClassicAgent's _llm_gen must put the user's
         upstream model name (``mistral-large-latest``) in the call to
