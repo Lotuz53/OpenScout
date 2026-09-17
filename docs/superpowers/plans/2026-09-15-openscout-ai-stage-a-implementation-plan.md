@@ -1342,7 +1342,7 @@ git commit -m "docs(openscout): publish measured stage A portfolio evidence"
 git tag openscout-stage-a
 ```
 
-> 实际验证：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。回归检查通过，Ruff 和前端生产构建通过；全量 pytest 已可完成收集，共 10,556 项（2 项跳过），结果为 10,085 passed、451 skipped、22 failed：其中 13 项 GraphRAG 测试因当前 `.venv` 缺少 `scipy`，9 项 MCP/BYOM 测试因沙箱 DNS 将测试或供应商地址解析到保留地址 `198.18.2.182` 后被安全 URL 校验拒绝。这些失败不属于 OpenScout Stage A 路径，未扩大范围修改。Task14 的报告渲染测试通过，合规 CJK 字体资产已随仓库提供并通过嵌入测试。Task17 步骤 4 所需的五张真实 UI 截图已捕获并纳入本次证据提交；连续短视频仍待维护者录制。因此 Task17 的步骤 5 仍待补齐，不能把阶段 A 记为完全通过。
+> 实际验证（2026-09-17）：使用项目 `.venv` 中的 Python 等价执行了集成命令；五个演示场景和报告导出通过。holdout 实测为事实题正确率 0.900、引用精确率 0.567、比较/综合问题成功率 0.890、非 GraphRAG 平均延迟 0ms、平均 token 49.550，因引用门槛未达标而保留为实验。`ruff check .` 通过；`frontend` lint 和生产构建均以退出码 0 完成，lint 有 320 条既有 warning，构建提示 Node 20.15 低于 Vite 推荐版本以及既有大 chunk warning。全量 pytest 结果为 8,164 passed、413 skipped、17 failed、1,967 errors；错误集中在 `pytest-postgresql`/`port_for` 受当前 macOS 沙箱限制无法选择临时端口（`Can't select a port`），OpenScout intelligence 测试在该轮全量运行中通过。这些环境阻断不属于 OpenScout Stage A 路径，未扩大范围修改。Task14 的报告渲染测试通过，合规 CJK 字体资产已随仓库提供并通过嵌入测试。Task17 步骤 4 所需的五张真实 UI 截图已捕获并纳入本次证据提交；连续短视频仍待维护者录制。由于全量 pytest 未通过，Task17 的步骤 5 保持未勾选，不能把阶段 A 记为完全通过。
 
 ## 阶段 A 自检记录
 
