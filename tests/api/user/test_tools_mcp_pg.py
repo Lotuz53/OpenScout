@@ -12,6 +12,14 @@ def app():
     return Flask(__name__)
 
 
+@pytest.fixture
+def _allow_public_mcp_url(monkeypatch):
+    monkeypatch.setattr(
+        "docsgpt.api.user.tools.mcp.validate_url",
+        lambda _url: None,
+    )
+
+
 @contextmanager
 def _patch_db(conn):
     @contextmanager
@@ -159,7 +167,7 @@ class TestTestMCPServerConfig:
             response = TestMCPServerConfig().post()
         assert response.status_code == 400
 
-    def test_connection_success(self, app):
+    def test_connection_success(self, app, _allow_public_mcp_url):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -188,7 +196,9 @@ class TestTestMCPServerConfig:
         assert response.json["success"] is True
         assert response.json["tools_count"] == 3
 
-    def test_connection_failure_returns_200_with_failure_message(self, app):
+    def test_connection_failure_returns_200_with_failure_message(
+        self, app, _allow_public_mcp_url
+    ):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -214,7 +224,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 200
         assert response.json["success"] is False
 
-    def test_oauth_required_returns_200(self, app):
+    def test_oauth_required_returns_200(self, app, _allow_public_mcp_url):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         fake_tool = MagicMock()
@@ -243,7 +253,7 @@ class TestTestMCPServerConfig:
         assert response.status_code == 200
         assert response.json["requires_oauth"] is True
 
-    def test_unexpected_exception_returns_500(self, app):
+    def test_unexpected_exception_returns_500(self, app, _allow_public_mcp_url):
         from docsgpt.api.user.tools.mcp import TestMCPServerConfig
 
         with patch(
@@ -334,7 +344,9 @@ class TestMCPServerSave:
             response = MCPServerSave().post()
         assert response.status_code == 400
 
-    def test_creates_mcp_tool_successfully(self, app, pg_conn):
+    def test_creates_mcp_tool_successfully(
+        self, app, pg_conn, _allow_public_mcp_url
+    ):
         from docsgpt.api.user.tools.mcp import MCPServerSave
 
         user = "u-mcp-save"
