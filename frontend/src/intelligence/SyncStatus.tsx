@@ -48,6 +48,10 @@ const SOURCE_LABELS: Record<SourceType, string> = {
   release: 'Release',
 };
 
+const FAILURE_SOURCE_LABELS: Record<string, string> = {
+  sync: '同步流程',
+};
+
 const STATUS_LABELS: Record<SyncRunStatus, string> = {
   queued: '排队中',
   running: '运行中',
@@ -62,6 +66,7 @@ const FAILURE_LABELS: Record<SyncFailureCategory, string> = {
   not_found: '来源不存在',
   network: '网络暂时不可用',
   invalid_payload: '数据格式无法识别',
+  local: '本地同步失败',
 };
 
 const STATUS_STYLES: Record<SyncRunStatus, string> = {
@@ -114,6 +119,9 @@ function formatDateRange(coverage: SyncRunCoverage): string {
 function sourceLabel(sourceType: string): string {
   if (sourceType in SOURCE_LABELS) {
     return SOURCE_LABELS[sourceType as SourceType];
+  }
+  if (sourceType in FAILURE_SOURCE_LABELS) {
+    return FAILURE_SOURCE_LABELS[sourceType];
   }
   return '数据来源';
 }

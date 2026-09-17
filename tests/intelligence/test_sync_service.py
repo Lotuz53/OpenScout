@@ -1,10 +1,12 @@
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from docsgpt.core.settings import settings
 from docsgpt.intelligence.github_client import GitHubRateLimitError
-from docsgpt.intelligence.schemas import IntelligenceRecord, SourceType
+from docsgpt.intelligence.schemas import IntelligenceRecord, SourceType, SyncFailure
 from docsgpt.intelligence.sync_service import SyncService
+from docsgpt.vectorstore.vector_creator import VectorCreator
 
 
 PROJECT_ID = "project-1"
@@ -41,6 +43,48 @@ def make_repository() -> MagicMock:
     repository.start_sync_run.return_value = {"id": "run-1"}
     repository.upsert_records.return_value = [SimpleNamespace(changed=True)]
     return repository
+
+
+def test_local_sync_failure_contract_accepts_process_failure() -> None:
+    failure = SyncFailure(
+        source_type="sync",
+        category="local",
+        retryable=False,
+        message="local index failed",
+    )
+
+    assert failure.source_type == "sync"
+    assert failure.category == "local"
+    assert failure.retryable is False
+
+
+def test_production_faiss_indexer_allows_a_missing_index(monkeypatch) -> None:
+    repository = MagicMock()
+    service = SyncService(
+        repository=None,
+        github=MagicMock(),
+        indexer=None,
+        session_factory=MagicMock(),
+    )
+    vector_store = MagicMock()
+
+    monkeypatch.setattr(settings, "VECTOR_STORE", "faiss", raising=False)
+    monkeypatch.setattr(settings, "EMBEDDINGS_KEY", "embedding-key", raising=False)
+    with patch.object(
+        VectorCreator,
+        "create_vectorstore",
+        return_value=vector_store,
+    ) as create_vectorstore:
+        indexer = service._get_indexer(PROJECT_ID, repository)
+
+    create_vectorstore.assert_called_once_with(
+        "faiss",
+        source_id=PROJECT_ID,
+        embeddings_key="embedding-key",
+        create_if_missing=True,
+    )
+    assert indexer is not None
+    assert indexer.vector_store is vector_store
 
 
 def test_sync_commits_releases_when_issues_fail() -> None:

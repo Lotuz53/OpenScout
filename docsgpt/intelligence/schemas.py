@@ -125,11 +125,21 @@ class IntelligenceRecord(IntelligenceModel):
         return data
 
 
+SyncFailureSource = SourceType | Literal["sync"]
+
+
 class SyncFailure(IntelligenceModel):
     """A source-specific synchronization failure."""
 
-    source_type: SourceType
-    category: Literal["rate_limit", "auth", "not_found", "network", "invalid_payload"]
+    source_type: SyncFailureSource
+    category: Literal[
+        "rate_limit",
+        "auth",
+        "not_found",
+        "network",
+        "invalid_payload",
+        "local",
+    ]
     retryable: bool
     message: str
 

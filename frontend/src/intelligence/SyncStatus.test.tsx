@@ -44,4 +44,23 @@ describe('SyncStatus', () => {
     expect(screen.getByText('Issue')).toBeInTheDocument();
     expect(screen.getByText('42')).toBeInTheDocument();
   });
+
+  it('labels local synchronization failures clearly', () => {
+    const failedRun: SyncRun = {
+      ...partialRun,
+      status: 'failed',
+      failures: [
+        {
+          source_type: 'sync',
+          category: 'local',
+          retryable: false,
+          message: 'FAISS save failed',
+        },
+      ],
+    };
+
+    render(<SyncStatus run={failedRun} />);
+
+    expect(screen.getByText('同步流程 · 本地同步失败')).toBeInTheDocument();
+  });
 });

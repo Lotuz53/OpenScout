@@ -634,10 +634,16 @@ class SyncService:
         from docsgpt.intelligence.indexing import IntelligenceIndexer
         from docsgpt.vectorstore.vector_creator import VectorCreator
 
+        vector_store_kwargs: dict[str, Any] = {
+            "source_id": project_id,
+            "embeddings_key": settings.EMBEDDINGS_KEY,
+        }
+        if str(settings.VECTOR_STORE).lower() == "faiss":
+            vector_store_kwargs["create_if_missing"] = True
+
         vector_store = VectorCreator.create_vectorstore(
             settings.VECTOR_STORE,
-            source_id=project_id,
-            embeddings_key=settings.EMBEDDINGS_KEY,
+            **vector_store_kwargs,
         )
         self.indexer = IntelligenceIndexer(repository, vector_store)
         return self.indexer

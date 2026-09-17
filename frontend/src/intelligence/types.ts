@@ -13,7 +13,12 @@ export type SyncRunStatus =
   'queued' | 'running' | 'complete' | 'partial' | 'failed';
 
 export type SyncFailureCategory =
-  'rate_limit' | 'auth' | 'not_found' | 'network' | 'invalid_payload';
+  | 'rate_limit'
+  | 'auth'
+  | 'not_found'
+  | 'network'
+  | 'invalid_payload'
+  | 'local';
 
 export interface SyncFailure {
   source_type: string;
