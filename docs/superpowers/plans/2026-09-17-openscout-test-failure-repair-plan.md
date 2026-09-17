@@ -103,7 +103,7 @@ git push origin HEAD:main
 - Consumes: `docsgpt.security.safe_url._resolve` and the existing BYOM dispatch tests.
 - Produces: explicit `_stable_public_model_dns` fixtures that make only forwarding tests deterministic while preserving the production validation and pinned-client implementation.
 
-- [ ] **Step 1: Confirm the current focused BYOM failures**
+- [x] **Step 1: Confirm the current focused BYOM failures**
 
 Run:
 
@@ -123,7 +123,7 @@ TestLLMCreatorDispatchUsesUpstreamModelId.test_llmcreator_sends_upstream_id_not_
 TestLLMCreatorDispatchUsesUpstreamModelId.test_llmcreator_forwards_byom_capabilities
 ```
 
-- [ ] **Step 2: Add deterministic DNS fixtures to the two test modules**
+- [x] **Step 2: Add deterministic DNS fixtures to the two test modules**
 
 In each module, add `import ipaddress` and this fixture:
 
@@ -138,13 +138,13 @@ def _stable_public_model_dns(monkeypatch):
 
 Add `_stable_public_model_dns` only to the four failing test methods listed in Step 1. Keep `test_dispatch_injects_pinned_http_client_for_user_model` unchanged because it already owns and asserts its own `socket.getaddrinfo` patch and pinned IP.
 
-- [ ] **Step 3: Run the focused BYOM suite**
+- [x] **Step 3: Run the focused BYOM suite**
 
 Run the command from Step 1.
 
 Expected: all tests in both modules pass, including API-key precedence, upstream model-id forwarding, capability forwarding, and the existing SSRF/DNS-pinning tests.
 
-- [ ] **Step 4: Run lint for the changed test modules**
+- [x] **Step 4: Run lint for the changed test modules**
 
 Run:
 
@@ -154,7 +154,7 @@ ruff check tests/core/test_byom_user_aware_helpers.py tests/core/test_registry_u
 
 Expected: exit code 0.
 
-- [ ] **Step 5: Review, commit, and push the BYOM task**
+- [x] **Step 5: Review, commit, and push the BYOM task**
 
 Run:
 
