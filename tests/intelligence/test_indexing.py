@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 import docsgpt.intelligence.indexing as indexing
 from docsgpt.intelligence.indexing import (
     IntelligenceIndexer,
@@ -9,6 +11,8 @@ from docsgpt.intelligence.indexing import (
 )
 from docsgpt.intelligence.schemas import IntelligenceRecord, SourceType
 from docsgpt.intelligence.sync_service import SyncService
+from docsgpt.storage.local import LocalStorage
+from docsgpt.vectorstore import faiss as indexing_faiss
 
 
 PROJECT_ID = "project-1"
@@ -107,6 +111,54 @@ def test_changed_record_replaces_only_its_chunks() -> None:
         "version": None,
         "source": "openscout://project-1/issue:42",
     }
+
+
+@pytest.fixture
+def real_faiss_store(tmp_path, monkeypatch):
+    class Embeddings:
+        dimension = 3
+
+        def embed_documents(self, texts):
+            return [[1.0, 0.0, 0.0] for _ in texts]
+
+    storage = LocalStorage(base_dir=str(tmp_path))
+    monkeypatch.setattr(
+        indexing_faiss,
+        "settings",
+        SimpleNamespace(EMBEDDINGS_NAME="test_model"),
+    )
+    monkeypatch.setattr(
+        indexing_faiss.BaseVectorStore,
+        "_get_embeddings",
+        lambda self, name, key: Embeddings(),
+    )
+    monkeypatch.setattr(indexing_faiss.StorageCreator, "get_storage", lambda: storage)
+
+    def build(create_if_missing=False):
+        return indexing_faiss.FaissStore(
+            PROJECT_ID,
+            "key",
+            create_if_missing=create_if_missing,
+        )
+
+    store = build(create_if_missing=True)
+    store.reopen = build
+    return store
+
+
+def test_replace_and_delete_records_survive_reopen(real_faiss_store) -> None:
+    first = IntelligenceIndexer(MagicMock(), real_faiss_store)
+    first.replace_records(PROJECT_ID, [issue_record(body="first body")])
+
+    second_store = real_faiss_store.reopen()
+    second = IntelligenceIndexer(MagicMock(), second_store)
+    second.replace_records(PROJECT_ID, [issue_record(body="updated body")])
+
+    replaced = real_faiss_store.reopen()
+    assert [chunk["text"] for chunk in replaced.get_chunks()] == ["updated body"]
+
+    second.delete_records(PROJECT_ID, ["issue:42"])
+    assert real_faiss_store.reopen().get_chunks() == []
 
 
 def test_unchanged_sync_adds_no_embeddings() -> None:
