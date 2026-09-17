@@ -182,7 +182,7 @@ The staged file list must contain only the two BYOM test modules.
 - Consumes: the existing `networkx.pagerank` call in `docsgpt/retriever/graph_rag.py`.
 - Produces: a base installation that includes the SciPy runtime required by the existing GraphRAG implementation.
 
-- [ ] **Step 1: Confirm the GraphRAG dependency failure**
+- [x] **Step 1: Confirm the GraphRAG dependency failure**
 
 Run:
 
@@ -193,7 +193,7 @@ KMP_DUPLICATE_LIB_OK=TRUE .venv/bin/python -m pytest \
 
 Expected before the dependency change: the PageRank and graph batching tests fail with `ModuleNotFoundError: No module named 'scipy'`, and the success-path close assertion observes the fallback path.
 
-- [ ] **Step 2: Add SciPy to the canonical core dependency list**
+- [x] **Step 2: Add SciPy to the canonical core dependency list**
 
 Add this entry next to the existing numerical/graph dependencies in `pyproject.toml`:
 
@@ -203,7 +203,7 @@ Add this entry next to the existing numerical/graph dependencies in `pyproject.t
 
 Do not edit any `docsgpt/requirements*.txt` file by hand.
 
-- [ ] **Step 3: Regenerate and install dependencies**
+- [x] **Step 3: Regenerate and install dependencies**
 
 Run:
 
@@ -215,13 +215,13 @@ uv sync
 
 Expected: the lock and all exported requirement files contain `scipy==1.18.1` for the current lock resolution, and the project environment can import `scipy`.
 
-- [ ] **Step 4: Run the GraphRAG suite**
+- [x] **Step 4: Run the GraphRAG suite**
 
 Run the command from Step 1.
 
 Expected: all GraphRAG tests pass, including PPR ordering, token budget, batching, fallback, and exactly-once success-path store close. Do not modify `docsgpt/retriever/graph_rag.py` unless this focused run still reports a resource-lifecycle failure after SciPy is installed.
 
-- [ ] **Step 5: Run dependency-file consistency checks**
+- [x] **Step 5: Run dependency-file consistency checks**
 
 Run:
 
@@ -232,7 +232,7 @@ ruff check docsgpt/retriever/graph_rag.py
 
 Expected: exit code 0; no source change is expected in `graph_rag.py` for this task.
 
-- [ ] **Step 6: Review, commit, and push the dependency task**
+- [x] **Step 6: Review, commit, and push the dependency task**
 
 Run:
 
