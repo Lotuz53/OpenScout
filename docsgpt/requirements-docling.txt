@@ -909,7 +909,9 @@ safetensors==0.8.0
     #   docling-ibm-models
     #   transformers
 scipy==1.18.1
-    # via docling-slim
+    # via
+    #   docling-slim
+    #   docsgpt
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 semchunk==3.2.5

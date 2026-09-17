@@ -419,6 +419,7 @@ numpy==2.5.3
     #   onnxruntime
     #   pandas
     #   qdrant-client
+    #   scipy
 oauthlib==3.3.1
     # via requests-oauthlib
 obstore==0.11.1
@@ -780,6 +781,8 @@ rsa==4.9.1
     # via python-jose
 s3transfer==0.19.2
     # via boto3
+scipy==1.18.1
+    # via docsgpt
 secretstorage==3.5.0 ; sys_platform == 'linux'
     # via keyring
 shellingham==1.5.4
