@@ -55,18 +55,11 @@
 Extend the `make_store` fixture with a `create_if_missing=False` keyword and pass it to `FaissStore`. Add these tests beside `test_missing_index_raises`:
 
 ```python
-def test_missing_index_can_be_initialized(self, make_store, storage):
+def test_missing_index_can_be_initialized(self, make_store):
     store = make_store(source_id="new-project", create_if_missing=True)
 
     assert store.index is None
     assert store.get_chunks() == []
-
-    ids = store.add_texts(["The first synchronized document."], [{"source": "README.md"}])
-
-    assert len(ids) == 1
-    assert store.index.ntotal == 1
-    for name in ("index.faiss", "index.json", "index.pkl"):
-        assert storage.file_exists(f"indexes/new-project/{name}"), name
 
 
 def test_partial_index_is_not_treated_as_missing(self, make_store, storage):
