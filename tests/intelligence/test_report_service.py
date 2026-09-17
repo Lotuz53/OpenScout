@@ -121,6 +121,14 @@ def test_markdown_and_pdf_share_source_ids(report: ReportDocument) -> None:
     assert all(heading in pdf_text for heading in REPORT_SECTION_HEADINGS)
 
 
+def test_pdf_embeds_bundled_cjk_font(report: ReportDocument) -> None:
+    """Use the repository font so CJK output is portable across environments."""
+    pdf = render_pdf(report)
+
+    assert b"/FontFile2" in pdf
+    assert b"STSong-Light" not in pdf
+
+
 def test_renderers_accept_only_report_documents(report: ReportDocument) -> None:
     """Renderers must not silently render an unvalidated JSON mapping."""
     with pytest.raises(TypeError):

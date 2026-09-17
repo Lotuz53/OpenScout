@@ -529,7 +529,7 @@ def _register_cjk_font(pdfmetrics: Any, tt_font: Any, cid_font: Any) -> str:
         font_candidates.append(Path(configured))
     font_candidates.extend(
         [
-            Path(__file__).resolve().parent / "resources" / "fonts" / "NotoSansCJKsc-Regular.otf",
+            Path(__file__).resolve().parent / "resources" / "fonts" / "NotoSansCJKsc-Regular.ttf",
             Path("/System/Library/Fonts/Supplemental/Hiragino Sans GB.ttc"),
             Path("/System/Library/Fonts/Supplemental/Songti.ttc"),
             Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),

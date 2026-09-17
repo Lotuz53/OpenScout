@@ -52,12 +52,16 @@ Stage A 固定为三个仓库和一个时间窗口，仍缺少 Stage B 计划中
 
 ## PDF 字体部署限制
 
-PDF 渲染器优先读取 `OPENSCOUT_CJK_FONT`，其次查找约定的
-`docsgpt/intelligence/resources/fonts/NotoSansCJKsc-Regular.otf` 和运行环境字体，
-最后使用 ReportLab 的 `STSong-Light` 回退。当前仓库没有随代码分发的 CJK 字体资产，
-所以本地测试可以通过，但不同容器或 PDF 阅读器可能使用不同字体替代。发布前必须
-提供经过许可的 CJK 字体文件并通过 `OPENSCOUT_CJK_FONT` 或合规资源目录配置；不得
-把 macOS 系统字体直接复制进仓库，也不得将未验证的字体写成已完成的发布证据。
+PDF 渲染器优先读取 `OPENSCOUT_CJK_FONT`，其次使用仓库内的
+`docsgpt/intelligence/resources/fonts/NotoSansCJKsc-Regular.ttf`，再查找运行环境字体，
+最后才使用 ReportLab 的 `STSong-Light` 回退。仓库内的字体是 Noto Sans CJK SC 的
+Regular 400 静态 TTF 实例，依据官方 [Noto CJK Variable TTF](https://github.com/googlefonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf)
+生成，采用 [SIL Open Font License 1.1](https://github.com/notofonts/noto-cjk/blob/main/Sans/LICENSE)，
+许可证副本保存在同一资源目录。其 SHA-256 为
+`501666bfeb4b1bc8dc1298b8f7d1d36f2a3eddc61feb7b16a77ed62e5840a036`。
+报告服务回归测试会检查 PDF 含嵌入式 TrueType 字体且没有使用 `STSong-Light`；自定义部署
+仍可通过 `OPENSCOUT_CJK_FONT` 覆盖。不得把 macOS 系统字体直接复制进仓库，也不得将
+未验证的字体写成已完成的发布证据。
 
 ## 截图与短视频清单
 

@@ -29,7 +29,7 @@
 
 预计投入：每天 6—8 小时，共 15 个高强度工作日。任务 1—7 建立从数据到查询的完整链路；任务 8—13 验证并优化检索与可信性；任务 14—17 完成报告、产品界面和发布证据。
 
-完成记录：Stage A Task 1—13、15—16 的实现和验证已完成；Task 14 的报告渲染测试通过，但可复现的合规 CJK 字体资产仍待部署配置；Task 17 的冻结演示和评估输出已提交，但完整环境验证与真实 UI 媒体证据仍待补齐，因此阶段 A 作品集版本尚未完全完成。阶段 A 的发布状态以 [`2026-09-15-openscout-ai-stage-a-implementation-plan.md`](2026-09-15-openscout-ai-stage-a-implementation-plan.md) 中 Task 14、Task 17 的勾选和实际验证记录为准；最后一个阶段 A 提交为 `acb8b3d5b618a8bcc2b7f30fb11f5ed33682025d`。
+完成记录：Stage A Task 1—13、15—16 的实现和验证已完成；Task 14 的报告渲染测试和合规 CJK 字体资产已完成；Task 17 的冻结演示和评估输出已提交，但完整环境验证与连续短视频仍待补齐，因此阶段 A 作品集版本尚未完全完成。阶段 A 的发布状态以 [`2026-09-15-openscout-ai-stage-a-implementation-plan.md`](2026-09-15-openscout-ai-stage-a-implementation-plan.md) 中 Task 14、Task 17 的勾选和实际验证记录为准；最后一个阶段 A 提交为本次字体资产修复提交（详见 Git 历史）。
 
 - [x] **阶段 A 验收门槛**
 
