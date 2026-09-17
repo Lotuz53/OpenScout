@@ -282,7 +282,9 @@ class FaissStore(BaseVectorStore):
         if self.index is None:
             faiss = _dependable_faiss_import()
             self.index = faiss.IndexFlatL2(len(vectors[0]))
-        return self._append(texts, metadatas, vectors, ids)
+        ids = self._append(texts, metadatas, vectors, ids)
+        self._save_to_storage()
+        return ids
 
     def delete_index(self, ids: Optional[List[str]] = None, *args, **kwargs):
         """Delete the given chunk ids, or the whole index when ids are omitted."""

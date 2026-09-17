@@ -177,6 +177,29 @@ class TestFaissPersistence:
         assert len(reloaded.get_chunks()) == 3
         assert "Paris" in str(reloaded.search("Paris", k=1)[0])
 
+    def test_add_texts_persists_for_reopen(self, make_store):
+        store = make_store(source_id="append-project", create_if_missing=True)
+        store.add_texts(["Paris is the capital of France."], [{"source": "README.md"}])
+
+        reopened = make_store(source_id="append-project")
+
+        assert reopened.index.ntotal == 1
+        assert reopened.get_chunks()[0]["metadata"]["source"] == "README.md"
+
+    def test_second_open_reuses_existing_index_for_incremental_append(self, make_store):
+        store = make_store(source_id="incremental-project", create_if_missing=True)
+        store.add_texts(["Postgres is a database."], [{"source": "db.md"}])
+
+        reopened = make_store(source_id="incremental-project")
+        reopened.add_texts(["Celery runs tasks."], [{"source": "queue.md"}])
+
+        final_store = make_store(source_id="incremental-project")
+        assert final_store.index.ntotal == 2
+        assert {chunk["metadata"]["source"] for chunk in final_store.get_chunks()} == {
+            "db.md",
+            "queue.md",
+        }
+
     def test_missing_index_raises(self, make_store):
         with pytest.raises(Exception, match="Error loading FAISS index"):
             make_store(source_id="never-written")
