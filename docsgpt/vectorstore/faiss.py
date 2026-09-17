@@ -89,6 +89,7 @@ class FaissStore(BaseVectorStore):
         ids=None,
         batch_size=None,
         skip_dimension_check: bool = False,
+        create_if_missing: bool = False,
     ):
         """Open or build one source's FAISS index.
 
@@ -103,6 +104,9 @@ class FaissStore(BaseVectorStore):
                 configured model. Only for a caller that is about to replace
                 that index, such as the re-embed script, which otherwise cannot
                 read the chunks it needs to rebuild from.
+            create_if_missing: Allow an entirely absent index to start empty.
+                Existing or incomplete index artifacts are still loaded
+                strictly and raise on corruption.
         """
         super().__init__()
         self.source_id = source_id
@@ -117,6 +121,8 @@ class FaissStore(BaseVectorStore):
         try:
             if docs_init:
                 self._build_from_documents(docs_init, ids=ids, batch_size=batch_size)
+            elif create_if_missing and not self._has_index_artifacts():
+                pass
             else:
                 self._load_from_storage()
         except Exception as e:
@@ -126,6 +132,13 @@ class FaissStore(BaseVectorStore):
             self.assert_embedding_dimensions(self.embeddings)
 
     # -- Construction ----------------------------------------------------
+
+    def _has_index_artifacts(self) -> bool:
+        """Return whether any FAISS index or sidecar file already exists."""
+        return any(
+            self.storage.file_exists(f"{self.path}/{name}")
+            for name in (FAISS_INDEX, JSON_SIDECAR, PICKLE_SIDECAR)
+        )
 
     def _build_from_documents(self, docs_init, ids=None, batch_size=None) -> None:
         """Create a fresh index seeded with ``docs_init``.

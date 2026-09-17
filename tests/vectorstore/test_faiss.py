@@ -4,6 +4,7 @@ The store no longer wraps langchain, so these drive the actual index rather
 than asserting that calls were forwarded to a mock.
 """
 
+import io
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -54,7 +55,7 @@ def storage(tmp_path):
 def make_store(storage):
     from docsgpt.vectorstore.faiss import FaissStore
 
-    def _make(source_id="src", docs_init=None):
+    def _make(source_id="src", docs_init=None, create_if_missing=False):
         with patch(
             "docsgpt.vectorstore.base.BaseVectorStore._get_embeddings",
             return_value=_FakeEmbeddings(),
@@ -63,7 +64,12 @@ def make_store(storage):
             return_value=storage,
         ), patch("docsgpt.vectorstore.faiss.settings") as mock_settings:
             mock_settings.EMBEDDINGS_NAME = "test_model"
-            return FaissStore(source_id, "key", docs_init=docs_init)
+            return FaissStore(
+                source_id,
+                "key",
+                docs_init=docs_init,
+                create_if_missing=create_if_missing,
+            )
 
     return _make
 
@@ -143,6 +149,18 @@ class TestFaissStore:
 
 @pytest.mark.unit
 class TestFaissPersistence:
+    def test_missing_index_can_be_initialized(self, make_store):
+        store = make_store(source_id="new-project", create_if_missing=True)
+
+        assert store.index is None
+        assert store.get_chunks() == []
+
+    def test_partial_index_is_not_treated_as_missing(self, make_store, storage):
+        storage.save_file(io.BytesIO(b"not a complete index"), "indexes/corrupt/index.faiss")
+
+        with pytest.raises(Exception, match="Error loading FAISS index"):
+            make_store(source_id="corrupt", create_if_missing=True)
+
     def test_save_writes_both_sidecars(self, populated, storage, tmp_path):
         for name in ("index.faiss", "index.json", "index.pkl"):
             assert storage.file_exists(f"indexes/src/{name}"), name
