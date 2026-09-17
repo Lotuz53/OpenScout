@@ -24,3 +24,9 @@
 ReportLab 的 `TTFont` 不支持 CFF/PostScript OTF，不能直接使用 Noto CJK OTF；静态
 TTF 通过官方 Variable TTF 固定为 Regular 400 后嵌入 PDF。回归测试验证 PDF 包含
 TrueType 字体资源且不落到 `STSong-Light` 回退。
+
+## 2026-09-17：锁定 Stage B 用户研究协议
+
+在招募参与者前锁定 Stage B 用户任务研究协议 v1.0：统一 15 分钟公开 GitHub 产品
+研究任务、5—10 名匿名参与者、五项预注册指标、主持人中立话术、知情同意和脱敏规则。
+当前尚未招募参与者，仓库中的观察表和结论文件只包含空白模板，不代表真实用户结果。
