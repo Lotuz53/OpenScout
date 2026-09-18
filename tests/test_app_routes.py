@@ -241,7 +241,9 @@ class TestFlaskCors:
     @pytest.mark.unit
     def test_cors_headers_on_flask_route(self, client):
         response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
-        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        assert response.status_code == 200
+        assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
+        assert response.headers["Vary"] == "Origin"
         assert response.headers["Access-Control-Allow-Headers"] == (
             "Content-Type, Authorization, Idempotency-Key"
         )
@@ -258,8 +260,48 @@ class TestFlaskCors:
             },
         )
         assert response.status_code == 200
-        assert response.headers["Access-Control-Allow-Origin"] == "*"
+        assert response.headers["Access-Control-Allow-Origin"] == "http://localhost:5173"
         assert response.headers["Access-Control-Allow-Headers"] == (
             "Content-Type, Authorization, Idempotency-Key"
         )
         assert response.headers["Access-Control-Allow-Methods"] == "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+
+    @pytest.mark.unit
+    def test_cors_rejects_unknown_origin_actual_request(self, client):
+        response = client.post("/api/health", headers={"Origin": "https://evil.example"})
+
+        assert response.status_code == 403
+        assert response.get_json()["error"] == "cors_origin_not_allowed"
+        assert "Access-Control-Allow-Origin" not in response.headers
+
+    @pytest.mark.unit
+    def test_cors_rejects_unknown_origin_preflight(self, client):
+        response = client.options(
+            "/api/health",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.get_json()["error"] == "cors_origin_not_allowed"
+        assert "Access-Control-Allow-Origin" not in response.headers
+
+    @pytest.mark.unit
+    def test_request_without_origin_remains_local_api_call(self, client):
+        response = client.get("/api/health")
+
+        assert response.status_code == 200
+        assert "Access-Control-Allow-Origin" not in response.headers
+
+    @pytest.mark.unit
+    def test_no_auth_rejects_non_loopback_client(self, client):
+        with patch("docsgpt.app.settings.AUTH_TYPE", None):
+            response = client.get(
+                "/api/health",
+                environ_overrides={"REMOTE_ADDR": "198.51.100.10"},
+            )
+
+        assert response.status_code == 403
+        assert response.get_json()["error"] == "local_access_required"

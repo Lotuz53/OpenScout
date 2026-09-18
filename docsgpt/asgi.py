@@ -6,15 +6,59 @@ from a2wsgi import WSGIMiddleware
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
 from starlette.routing import Mount
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from docsgpt.api.async_sse import async_sse_routes
 from docsgpt.app import app as flask_app
+from docsgpt.core.cors import cors_allowed_origins
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
 from docsgpt.ui import StaticUI
 
 _WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
+
+
+class CorsOriginRestrictionMiddleware:
+    """Reject unknown browser origins before mounted ASGI apps handle them."""
+
+    def __init__(self, app: ASGIApp, allowed_origins: tuple[str, ...]):
+        self.app = app
+        self.allowed_origins = frozenset(allowed_origins)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        origin = next(
+            (
+                value.decode("latin-1")
+                for name, value in scope.get("headers", [])
+                if name.lower() == b"origin"
+            ),
+            None,
+        )
+        if origin and origin not in self.allowed_origins:
+            response = JSONResponse(
+                {
+                    "success": False,
+                    "error": "cors_origin_not_allowed",
+                    "message": "The request Origin is not allowed",
+                },
+                status_code=403,
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+_CORS_ALLOWED_ORIGINS = cors_allowed_origins(
+    settings.CORS_ALLOWED_ORIGINS,
+    settings.AUTH_TYPE,
+)
 
 mcp_app = mcp.http_app(path="/")
 
@@ -38,8 +82,12 @@ asgi_app = Starlette(
     ],
     middleware=[
         Middleware(
+            CorsOriginRestrictionMiddleware,
+            allowed_origins=_CORS_ALLOWED_ORIGINS,
+        ),
+        Middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=list(_CORS_ALLOWED_ORIGINS),
             allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
             allow_headers=[
                 "Content-Type",

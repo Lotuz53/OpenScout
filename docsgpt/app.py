@@ -11,6 +11,13 @@ from werkzeug.exceptions import RequestEntityTooLarge
 from docsgpt.auth import handle_auth
 
 from docsgpt.core import log_context
+from docsgpt.core.cors import (
+    CORS_ALLOWED_HEADERS,
+    CORS_ALLOWED_METHODS,
+    SECURE_AUTH_TYPES,
+    is_allowed_cors_origin,
+    is_loopback_client,
+)
 from docsgpt.core.paths import env_file
 from docsgpt.core.logging_config import setup_logging
 
@@ -145,6 +152,100 @@ def handle_request_entity_too_large(_error):
 def handle_restx_request_entity_too_large(_error):
     """Keep Flask-RESTX from replacing the configured upload-limit response."""
     return _upload_limit_error_payload(), 413
+
+
+def _local_mode_auth_exempt(path: str) -> bool:
+    """Keep endpoints with their own credentials reachable in local mode."""
+    return path.startswith(
+        (
+            "/v1/",
+            "/scim/",
+            "/api/devices/",
+            "/api/internal/",
+            "/api/public/intelligence/",
+        )
+    )
+
+
+@app.before_request
+def enforce_cors_and_local_mode():
+    """Reject untrusted browser origins and remote no-auth API clients."""
+    origin = request.headers.get("Origin")
+    if origin:
+        if not is_allowed_cors_origin(
+            origin,
+            settings.CORS_ALLOWED_ORIGINS,
+            settings.AUTH_TYPE,
+        ):
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "cors_origin_not_allowed",
+                        "message": "The request Origin is not allowed",
+                    }
+                ),
+                403,
+            )
+
+        if request.method == "OPTIONS":
+            requested_method = request.headers.get("Access-Control-Request-Method")
+            if requested_method and requested_method.upper() not in CORS_ALLOWED_METHODS:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "cors_method_not_allowed",
+                            "message": "The requested CORS method is not allowed",
+                        }
+                    ),
+                    403,
+                )
+            requested_headers = request.headers.get("Access-Control-Request-Headers", "")
+            allowed_headers = {header.lower() for header in CORS_ALLOWED_HEADERS}
+            if any(
+                header.strip().lower() not in allowed_headers
+                for header in requested_headers.split(",")
+                if header.strip()
+            ):
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "cors_header_not_allowed",
+                            "message": "The requested CORS header is not allowed",
+                        }
+                    ),
+                    403,
+                )
+        elif request.method not in CORS_ALLOWED_METHODS:
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "cors_method_not_allowed",
+                        "message": "The request method is not allowed for CORS",
+                    }
+                ),
+                403,
+            )
+
+    if (
+        settings.AUTH_TYPE not in SECURE_AUTH_TYPES
+        and not _local_mode_auth_exempt(request.path)
+        and not is_loopback_client(request.remote_addr)
+    ):
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "local_access_required",
+                    "message": "No-auth mode only accepts loopback clients",
+                }
+            ),
+            403,
+        )
+    return None
 
 
 @app.before_request
@@ -369,12 +470,24 @@ def _bind_user_id_to_log_context():
 
 @app.after_request
 def after_request(response: Response) -> Response:
-    """Add CORS headers for the pure Flask development entrypoint."""
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = (
-        "Content-Type, Authorization, Idempotency-Key"
-    )
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    """Add CORS headers only for an explicitly allowed origin."""
+    origin = request.headers.get("Origin")
+    # Starlette's outer CORSMiddleware owns headers when this WSGI app is
+    # mounted under ASGI; adding them here would duplicate Vary/Origin.
+    if origin and "asgi.scope" not in request.environ:
+        vary_values = {
+            value.strip().lower() for value in response.headers.get("Vary", "").split(",")
+        }
+        if "origin" not in vary_values:
+            response.headers.add("Vary", "Origin")
+        if is_allowed_cors_origin(
+            origin,
+            settings.CORS_ALLOWED_ORIGINS,
+            settings.AUTH_TYPE,
+        ):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Headers"] = ", ".join(CORS_ALLOWED_HEADERS)
+            response.headers["Access-Control-Allow-Methods"] = ", ".join(CORS_ALLOWED_METHODS)
     return response
 
 

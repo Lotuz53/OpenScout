@@ -285,13 +285,24 @@ rejected. These limits apply before the image is written to local or S3 storage.
 
 DocsGPT includes a JWT (JSON Web Token) based authentication feature for managing sessions or securing local deployments while allowing access.
 
+### Browser CORS
+
+`CORS_ALLOWED_ORIGINS` is a comma-separated list of exact browser origins. When
+unset, the backend allows only the local frontend origins
+`http://localhost:5173`, `http://localhost:5174`,
+`http://127.0.0.1:5173`, and `http://127.0.0.1:5174`. Wildcards are not
+accepted. In no-auth mode, configured origins are still restricted to loopback;
+use `simple_jwt`, `session_jwt`, or `oidc` before allowing a non-loopback origin.
+Requests without an `Origin` header remain valid local API calls, while unknown
+cross-origin requests are rejected.
+
 ### `AUTH_TYPE` Overview
 
 The `AUTH_TYPE` setting in your `.env` file or `settings.py` determines the authentication method used by DocsGPT. This allows you to control how users authenticate with your DocsGPT instance.
 
 | Value         | Description                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------------- |
-| `None`        | No authentication is used. Anyone can access the app.                                       |
+| `None`        | No authentication is used. Only loopback clients can access the app.                       |
 | `simple_jwt`  | A single, long-lived JWT token is generated at startup. All requests use this shared token. |
 | `session_jwt` | Unique JWT tokens are generated for each session/user.                                      |
 | `oidc`        | Users sign in through an external OpenID Connect provider (Authentik, Keycloak, Okta, ...). See [SSO with OIDC](/Deploying/OIDC-SSO). |

@@ -28,7 +28,7 @@ def test_flask_route_served_through_starlette_mount():
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
         r = client.get("/api/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
@@ -47,14 +47,14 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
         # Minimal MCP initialize request. Doesn't need to succeed — we
         # just need a non-404, non-500-with-RuntimeError response to
         # confirm the mount + lifespan are both wired.
         r = client.post(
             "/mcp/",
             headers={
-                "Origin": "http://example.com",
+                "Origin": "http://localhost:5173",
                 "Content-Type": "application/json",
                 "Accept": "application/json, text/event-stream",
             },
@@ -78,18 +78,16 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
 
 @pytest.mark.unit
 def test_cors_headers_on_flask_route():
-    """CORS middleware should emit allow-origin on actual (non-preflight) requests.
-
-    ``allow_origins=["*"]`` → header value is literal ``*`` (not an echo).
-    """
+    """CORS middleware should echo an explicitly allowed origin."""
     from starlette.testclient import TestClient
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
-        r = client.get("/api/health", headers={"Origin": "http://example.com"})
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
+        r = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
     assert r.status_code == 200
-    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert r.headers.get("vary") == "Origin"
 
 
 @pytest.mark.unit
@@ -99,17 +97,17 @@ def test_cors_preflight_on_flask_route():
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
         r = client.options(
             "/api/health",
             headers={
-                "Origin": "http://example.com",
+                "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "GET",
                 "Access-Control-Request-Headers": "Content-Type",
             },
         )
     assert r.status_code in (200, 204)
-    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "GET" in r.headers.get("access-control-allow-methods", "")
 
 
@@ -122,11 +120,11 @@ def test_cors_preflight_allows_patch():
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
         r = client.options(
             "/api/health",
             headers={
-                "Origin": "http://example.com",
+                "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "PATCH",
                 "Access-Control-Request-Headers": "Content-Type, Authorization",
             },
@@ -142,11 +140,11 @@ def test_cors_preflight_on_mcp_route():
 
     from docsgpt.asgi import asgi_app
 
-    with TestClient(asgi_app) as client:
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
         r = client.options(
             "/mcp/",
             headers={
-                "Origin": "http://example.com",
+                "Origin": "http://localhost:5173",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": (
                     "Authorization, Content-Type, Mcp-Session-Id"
@@ -154,8 +152,34 @@ def test_cors_preflight_on_mcp_route():
             },
         )
     assert r.status_code in (200, 204)
-    assert r.headers.get("access-control-allow-origin") == "*"
+    assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "Mcp-Session-Id" in r.headers.get("access-control-allow-headers", "")
+
+
+@pytest.mark.unit
+def test_cors_rejects_unknown_origin_on_flask_route():
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app) as client:
+        r = client.get("/api/health", headers={"Origin": "https://evil.example"})
+
+    assert r.status_code == 403
+    assert r.headers.get("access-control-allow-origin") is None
+
+
+@pytest.mark.unit
+def test_cors_rejects_unknown_origin_on_mcp_route():
+    from starlette.testclient import TestClient
+
+    from docsgpt.asgi import asgi_app
+
+    with TestClient(asgi_app, client=("127.0.0.1", 50000)) as client:
+        r = client.post("/mcp/", headers={"Origin": "https://evil.example"})
+
+    assert r.status_code == 403
+    assert r.headers.get("access-control-allow-origin") is None
 
 
 @pytest.mark.unit

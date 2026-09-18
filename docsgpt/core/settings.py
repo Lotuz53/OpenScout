@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     AUTH_TYPE: Optional[str] = None  # simple_jwt, session_jwt, oidc, or None
+    # Comma-separated browser origins. Empty/unset uses the local frontend defaults;
+    # non-loopback origins require simple_jwt, session_jwt, or oidc.
+    CORS_ALLOWED_ORIGINS: Optional[str] = None
 
     # OIDC SSO (AUTH_TYPE=oidc) — any OpenID Connect IdP with discovery (Authentik, Keycloak, ...)
     OIDC_ISSUER: Optional[str] = None  # e.g. https://auth.example.com/application/o/docsgpt/
@@ -551,6 +554,20 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_pgvector_connection_string_validator(cls, v):
         return normalize_pgvector_connection_string(v)
+
+    @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
+    @classmethod
+    def _validate_cors_allowed_origins(cls, v):
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        if v.strip().lower() in {"", "none"}:
+            return None
+        origins = tuple(origin.strip() for origin in v.split(",") if origin.strip())
+        if "*" in origins:
+            raise ValueError("CORS_ALLOWED_ORIGINS must not contain the wildcard '*'")
+        return ",".join(origins) or None
 
     @field_validator(
         "API_KEY",
