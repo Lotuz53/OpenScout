@@ -14,10 +14,26 @@ directory. That keeps a source checkout and the Docker image (which runs from
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 
 HOME_ENV = "DOCSGPT_HOME"
 ENV_FILE_ENV = "DOCSGPT_ENV_FILE"
+
+
+def warn_on_insecure_env_file(path: Path) -> None:
+    """Warn when an environment file can be accessed by group or other users."""
+    try:
+        mode = path.stat().st_mode & 0o777
+    except OSError:
+        return
+    if mode & 0o077:
+        logging.getLogger(__name__).warning(
+            "Environment file %s is not private (mode %o); run chmod 600 %s",
+            path,
+            mode,
+            path,
+        )
 
 
 def package_dir() -> Path:
@@ -46,5 +62,8 @@ def env_file() -> Path:
         path = Path(configured).expanduser()
         if not path.is_file():
             raise FileNotFoundError(f"{ENV_FILE_ENV} is set to {path}, which is not a file")
+        warn_on_insecure_env_file(path)
         return path
-    return home_dir() / ".env"
+    path = home_dir() / ".env"
+    warn_on_insecure_env_file(path)
+    return path

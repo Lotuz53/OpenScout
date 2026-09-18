@@ -1,5 +1,6 @@
 """Data home and .env discovery (docsgpt.core.paths)."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,29 @@ class TestEnvFile:
         monkeypatch.setenv(paths.ENV_FILE_ENV, str(tmp_path / "nope.env"))
         with pytest.raises(FileNotFoundError, match="DOCSGPT_ENV_FILE"):
             paths.env_file()
+
+    def test_warns_when_env_file_is_not_private(self, monkeypatch, tmp_path, caplog):
+        env_path = tmp_path / "custom.env"
+        env_path.write_text("PLACEHOLDER=1\n")
+        env_path.chmod(0o644)
+        monkeypatch.setenv(paths.ENV_FILE_ENV, str(env_path))
+
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.paths"):
+            assert paths.env_file() == env_path
+
+        assert "not private" in caplog.text
+        assert "PLACEHOLDER" not in caplog.text
+
+    def test_does_not_warn_for_private_env_file(self, monkeypatch, tmp_path, caplog):
+        env_path = tmp_path / "custom.env"
+        env_path.write_text("PLACEHOLDER=1\n")
+        env_path.chmod(0o600)
+        monkeypatch.setenv(paths.ENV_FILE_ENV, str(env_path))
+
+        with caplog.at_level(logging.WARNING, logger="docsgpt.core.paths"):
+            assert paths.env_file() == env_path
+
+        assert "not private" not in caplog.text
 
 
 class TestSettingsFollowTheHome:
