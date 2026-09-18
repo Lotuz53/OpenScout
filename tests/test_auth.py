@@ -46,7 +46,7 @@ class TestHandleAuth:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": False, "require_exp": False},
+            options={"verify_exp": False},
         )
 
     def test_returns_error_on_invalid_jwt(self):
@@ -117,11 +117,11 @@ class TestHandleAuthOidc:
             "valid_token",
             "secret",
             algorithms=["HS256"],
-            options={"verify_exp": True, "require_exp": True},
+            options={"verify_exp": True, "require": ["exp"]},
         )
 
     def test_expired_token_returns_token_expired(self):
-        from jose.exceptions import ExpiredSignatureError
+        from jwt.exceptions import ExpiredSignatureError
 
         from docsgpt.auth import handle_auth
 
@@ -158,7 +158,7 @@ class TestHandleAuthOidc:
         # Under oidc, exp is REQUIRED: an exp-less HS256 token signed with the
         # shared secret (e.g. a legacy simple_jwt/session_jwt token) must not
         # authenticate, or it would be valid forever and unrevocable.
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 
@@ -176,7 +176,7 @@ class TestHandleAuthOidc:
     def test_expired_token_real_jose(self):
         import time
 
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 
@@ -198,7 +198,7 @@ class TestHandleAuthOidc:
     def test_simple_jwt_still_skips_exp_verification(self):
         import time
 
-        from jose import jwt as real_jwt
+        import jwt as real_jwt
 
         from docsgpt.auth import handle_auth
 

@@ -12,8 +12,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
-from jose import jwk
-from jose import jwt as jose_jwt
+import jwt as jose_jwt
 
 from docsgpt.core.settings import settings
 
@@ -44,11 +43,22 @@ def _generate_rsa_pem():
 
 
 PRIVATE_PEM = _generate_rsa_pem()
-PUBLIC_JWK = {
-    **jwk.construct(PRIVATE_PEM, algorithm="RS256").public_key().to_dict(),
-    "kid": KID,
-    "use": "sig",
-}
+
+
+def _public_jwk(private_pem, kid):
+    """Convert a PEM test key to the JWKS projection consumed by PyJWT."""
+    private_key = serialization.load_pem_private_key(
+        private_pem.encode("ascii"), password=None
+    )
+    return {
+        **json.loads(jose_jwt.algorithms.RSAAlgorithm.to_jwk(private_key.public_key())),
+        "kid": kid,
+        "use": "sig",
+        "alg": "RS256",
+    }
+
+
+PUBLIC_JWK = _public_jwk(PRIVATE_PEM, KID)
 
 
 def sign_id_token(claims, kid=KID, key=PRIVATE_PEM, algorithm="RS256"):
@@ -261,11 +271,7 @@ class TestValidateIdToken:
         from docsgpt.api.oidc import provider
 
         new_pem = _generate_rsa_pem()
-        new_jwk = {
-            **jwk.construct(new_pem, algorithm="RS256").public_key().to_dict(),
-            "kid": KID,
-            "use": "sig",
-        }
+        new_jwk = _public_jwk(new_pem, KID)
         token = sign_id_token(id_token_claims(), key=new_pem)
 
         with patch("docsgpt.api.oidc.provider.requests") as mock_requests:
@@ -280,11 +286,7 @@ class TestValidateIdToken:
         from docsgpt.api.oidc import provider
 
         rotated_pem = _generate_rsa_pem()
-        rotated_jwk = {
-            **jwk.construct(rotated_pem, algorithm="RS256").public_key().to_dict(),
-            "kid": "rotated-key",
-            "use": "sig",
-        }
+        rotated_jwk = _public_jwk(rotated_pem, "rotated-key")
         token = sign_id_token(id_token_claims(), kid="rotated-key", key=rotated_pem)
 
         jwks_keys = [PUBLIC_JWK]

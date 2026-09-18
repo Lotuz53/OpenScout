@@ -1,5 +1,5 @@
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError
+import jwt
+from jwt.exceptions import ExpiredSignatureError
 
 from docsgpt.core.settings import settings
 
@@ -14,17 +14,20 @@ def handle_auth(request, data={}):
 
         is_oidc = settings.AUTH_TYPE == "oidc"
         try:
+            decode_options = {"verify_exp": is_oidc}
+            if is_oidc:
+                decode_options["require"] = ["exp"]
             decoded_token = jwt.decode(
                 jwt_token,
                 settings.JWT_SECRET_KEY,
                 algorithms=["HS256"],
                 # oidc sessions are minted with an exp at the login callback and
-                # must carry one: require_exp rejects any exp-less HS256 token
+                # must carry one: the required-claim option rejects any exp-less HS256 token
                 # signed with JWT_SECRET_KEY (e.g. a legacy simple_jwt/session_jwt
                 # token), which would otherwise authenticate forever and be
                 # unrevocable. simple_jwt/session_jwt never carried an exp, so the
                 # requirement is scoped to oidc.
-                options={"verify_exp": is_oidc, "require_exp": is_oidc},
+                options=decode_options,
             )
             return decoded_token
         except ExpiredSignatureError:

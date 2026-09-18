@@ -262,7 +262,7 @@ class TestAppJwtKeySetupLogic:
 
     def test_simple_jwt_token_encoded(self):
         """Lines 64-66: SIMPLE_JWT_TOKEN is created via jwt.encode."""
-        from jose import jwt as jose_jwt
+        import jwt as jose_jwt
 
         key = "test_secret_key_for_testing_purposes"
         payload = {"sub": "local"}

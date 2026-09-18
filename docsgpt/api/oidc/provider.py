@@ -7,8 +7,8 @@ import threading
 import time
 
 import requests
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTClaimsError
+import jwt
+from jwt.exceptions import ExpiredSignatureError, InvalidSignatureError, InvalidTokenError
 
 from docsgpt.core.settings import settings
 
@@ -135,6 +135,18 @@ def _decode_verified(token: str, options: dict) -> dict:
     retry once against a freshly fetched JWKS (rate-limited in get_jwks).
     """
     key = _resolve_signing_key(token)
+    decode_options = dict(options)
+    leeway = decode_options.pop("leeway", 0)
+    required_claims = [
+        name.removeprefix("require_")
+        for name, required in decode_options.items()
+        if name.startswith("require_") and required
+    ]
+    for name in tuple(decode_options):
+        if name.startswith("require_") or name == "verify_at_hash":
+            decode_options.pop(name, None)
+    if required_claims:
+        decode_options["require"] = required_claims
     decode_kwargs = {
         "algorithms": ALLOWED_ID_TOKEN_ALGS,
         "audience": settings.OIDC_CLIENT_ID,
@@ -142,21 +154,31 @@ def _decode_verified(token: str, options: dict) -> dict:
         # some IdPs (Authentik) use a trailing slash the operator may
         # not have typed into OIDC_ISSUER.
         "issuer": get_discovery()["issuer"],
-        "options": options,
+        "options": decode_options,
+        "leeway": leeway,
     }
     try:
-        return jwt.decode(token, key, **decode_kwargs)
-    except (ExpiredSignatureError, JWTClaimsError) as exc:
+        return jwt.decode(token, jwt.PyJWK(key).key, **decode_kwargs)
+    except ExpiredSignatureError as exc:
+        raise OIDCError(f"token validation failed: {exc}") from exc
+    except InvalidSignatureError:
+        # The IdP may have rotated the key while reusing its kid.
+        pass
+    except InvalidTokenError as exc:
         raise OIDCError(f"token validation failed: {exc}") from exc
     except Exception:
-        get_jwks(force=True)
-        key = _find_key(jwt.get_unverified_header(token).get("kid"))
-        if key is None:
-            raise OIDCError("No matching key in IdP JWKS")
-        try:
-            return jwt.decode(token, key, **decode_kwargs)
-        except Exception as exc:
-            raise OIDCError(f"token validation failed: {exc}") from exc
+        # Preserve the previous key-refresh behavior for other verification
+        # errors while allowing the refreshed key to produce the final error.
+        pass
+
+    get_jwks(force=True)
+    key = _find_key(jwt.get_unverified_header(token).get("kid"))
+    if key is None:
+        raise OIDCError("No matching key in IdP JWKS")
+    try:
+        return jwt.decode(token, jwt.PyJWK(key).key, **decode_kwargs)
+    except Exception as exc:
+        raise OIDCError(f"token validation failed: {exc}") from exc
 
 
 def validate_id_token(id_token: str, nonce: str | None = None) -> dict:

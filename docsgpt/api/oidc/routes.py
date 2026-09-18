@@ -20,7 +20,7 @@ import uuid
 from urllib.parse import quote, urlencode
 
 from flask import Blueprint, Response, jsonify, make_response, redirect, request
-from jose import jwt
+import jwt
 
 from docsgpt.api.oidc import denylist, provider
 from docsgpt.auth import handle_auth

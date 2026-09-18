@@ -19,7 +19,7 @@ request with ``?sub=``/``?email=`` for multi-user tests). Group membership
 comes from ``MOCK_OIDC_GROUPS`` (comma-separated).
 
 Run standalone (does NOT import anything from ``application/``). Dependencies
-(flask, python-jose, cryptography, requests) are all in
+(flask, PyJWT, cryptography, requests) are all in
 ``docsgpt/requirements.txt``.
 
 Usage::
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 import secrets
 import sys
@@ -44,8 +45,7 @@ import requests
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from flask import Flask, Response, jsonify, redirect, request
-from jose import jwk
-from jose import jwt as jose_jwt
+import jwt as jose_jwt
 
 HOST = os.environ.get("MOCK_OIDC_HOST", "127.0.0.1")
 PORT = int(os.environ.get("MOCK_OIDC_PORT", "7999"))
@@ -76,9 +76,10 @@ PRIVATE_PEM = _private_key.private_bytes(
     encryption_algorithm=serialization.NoEncryption(),
 ).decode("ascii")
 PUBLIC_JWK = {
-    **jwk.construct(PRIVATE_PEM, algorithm="RS256").public_key().to_dict(),
+    **json.loads(jose_jwt.algorithms.RSAAlgorithm.to_jwk(_private_key.public_key())),
     "kid": KID,
     "use": "sig",
+    "alg": "RS256",
 }
 
 # code -> {client_id, redirect_uri, code_challenge, nonce, sub, email, name, groups}
