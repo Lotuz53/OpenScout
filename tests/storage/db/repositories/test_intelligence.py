@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
+import threading
 
 import pytest
+from sqlalchemy import text
 
 from docsgpt.intelligence.schemas import (
     Coverage,
@@ -226,6 +228,121 @@ def test_sync_run_persists_local_failure_summary(pg_conn, project) -> None:
     assert finished["status"] == "failed"
     assert finished["failures"][0]["source_type"] == "sync"
     assert finished["failures"][0]["category"] == "local"
+
+
+def test_claim_project_sync_creates_one_running_attempt(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+
+    first = repo.claim_project_sync(project_id, "owner")
+    second = repo.claim_project_sync(project_id, "owner")
+
+    assert first is not None
+    assert first["status"] == "running"
+    assert second is None
+    assert repo.get_project(project_id, "owner")["status"] == "syncing"
+
+
+def test_claim_project_sync_allows_a_new_attempt_after_failure(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+
+    first = repo.claim_project_sync(project_id, "owner")
+    repo.fail_sync_run(str(first["id"]), "index persistence failed")
+    repo.set_project_status(project_id, "owner", "failed")
+
+    replacement = repo.claim_project_sync(project_id, "owner")
+
+    assert replacement is not None
+    assert str(replacement["id"]) != str(first["id"])
+    assert repo.get_sync_run(str(first["id"]), "owner")["status"] == "failed"
+
+
+def test_claim_project_sync_allows_a_new_attempt_after_success(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    first = repo.claim_project_sync(project_id, "owner")
+    repo.finish_sync_run(
+        str(first["id"]),
+        SyncSummary(
+            status="complete",
+            counts={},
+            coverage=Coverage(
+                repositories=["langgenius/dify"],
+                date_from=date(2025, 9, 14),
+                date_to=date(2026, 9, 14),
+                counts={},
+            ),
+        ),
+    )
+    repo.set_project_status(project_id, "owner", "ready")
+
+    replacement = repo.claim_project_sync(project_id, "owner")
+
+    assert replacement is not None
+    assert str(replacement["id"]) != str(first["id"])
+
+
+def test_claim_project_sync_is_atomic_under_concurrency(pg_engine) -> None:
+    project_id = None
+    with pg_engine.begin() as conn:
+        project = IntelligenceRepository(conn).create_project(
+            user_id="owner",
+            repository="langgenius/dify",
+            window_start=date(2025, 9, 14),
+            window_end=date(2026, 9, 14),
+        )
+        project_id = str(project["id"])
+
+    barrier = threading.Barrier(2)
+    results = []
+    errors = []
+
+    def claim() -> None:
+        try:
+            with pg_engine.begin() as conn:
+                barrier.wait(timeout=10)
+                results.append(
+                    IntelligenceRepository(conn).claim_project_sync(project_id, "owner")
+                )
+        except Exception as exc:  # pragma: no cover - assertion reports the cause
+            errors.append(exc)
+
+    threads = [threading.Thread(target=claim) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+
+    assert errors == []
+    assert len(results) == 2
+    assert sum(result is not None for result in results) == 1
+
+
+def test_claim_project_sync_reaps_an_expired_attempt(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    stale = repo.start_sync_run(project_id)
+    repo.set_project_status(project_id, "owner", "syncing")
+    pg_conn.execute(
+        text(
+            "UPDATE intelligence_sync_runs "
+            "SET started_at = now() - interval '1 hour' "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": str(stale["id"])},
+    )
+
+    replacement = repo.claim_project_sync(
+        project_id,
+        "owner",
+        stale_after_seconds=60,
+    )
+
+    assert replacement is not None
+    assert str(replacement["id"]) != str(stale["id"])
+    assert repo.get_sync_run(str(stale["id"]), "owner")["status"] == "failed"
+    assert repo.get_sync_run(str(replacement["id"]), "owner")["status"] == "running"
 
 
 def test_overview_includes_latest_owner_sync_run(

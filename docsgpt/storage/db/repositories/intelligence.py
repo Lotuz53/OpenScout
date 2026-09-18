@@ -243,6 +243,146 @@ class IntelligenceRepository:
         row = result.fetchone()
         return row_to_dict(row) if row is not None else None
 
+    def claim_project_sync(
+        self,
+        project_id: str,
+        user_id: str,
+        *,
+        stale_after_seconds: int = 3600,
+    ) -> dict[str, Any] | None:
+        """Atomically claim one project synchronization attempt.
+
+        The project row lock serializes manual, scheduled, and worker-side
+        claims. An old running attempt is failed while holding that lock so a
+        crashed worker cannot permanently block a later synchronization.
+
+        Args:
+            project_id: UUID of the project to claim.
+            user_id: Authenticated project owner.
+            stale_after_seconds: Age after which a running attempt is expired.
+
+        Returns:
+            The newly created running sync row, or ``None`` when the project is
+            missing for the owner or another attempt is still active.
+        """
+        stale_after_seconds = max(1, int(stale_after_seconds))
+        project = self._conn.execute(
+            text(
+                """
+                SELECT id
+                FROM intelligence_projects
+                WHERE id = CAST(:project_id AS uuid)
+                  AND user_id = :user_id
+                FOR UPDATE
+                """
+            ),
+            {"project_id": project_id, "user_id": user_id},
+        ).fetchone()
+        if project is None:
+            return None
+
+        expired_failure = json.dumps(
+            [
+                {
+                    "source_type": "sync",
+                    "category": "local",
+                    "retryable": True,
+                    "message": "Previous synchronization attempt expired before completion.",
+                }
+            ],
+            ensure_ascii=False,
+        )
+        self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_sync_runs
+                SET status = 'failed',
+                    failures = CAST(:failures AS jsonb),
+                    finished_at = now()
+                WHERE project_id = CAST(:project_id AS uuid)
+                  AND status IN ('queued', 'running')
+                  AND COALESCE(started_at, created_at)
+                      < now() - (:stale_after_seconds * interval '1 second')
+                """
+            ),
+            {
+                "project_id": project_id,
+                "stale_after_seconds": stale_after_seconds,
+                "failures": expired_failure,
+            },
+        )
+
+        active = self._conn.execute(
+            text(
+                """
+                SELECT 1
+                FROM intelligence_sync_runs
+                WHERE project_id = CAST(:project_id AS uuid)
+                  AND status IN ('queued', 'running')
+                LIMIT 1
+                """
+            ),
+            {"project_id": project_id},
+        ).fetchone()
+        if active is not None:
+            return None
+
+        self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_projects
+                SET status = 'syncing'
+                WHERE id = CAST(:project_id AS uuid)
+                  AND user_id = :user_id
+                """
+            ),
+            {"project_id": project_id, "user_id": user_id},
+        )
+        result = self._conn.execute(
+            text(
+                """
+                INSERT INTO intelligence_sync_runs (project_id, status, started_at)
+                VALUES (CAST(:project_id AS uuid), 'running', now())
+                RETURNING *
+                """
+            ),
+            {"project_id": project_id},
+        )
+        return row_to_dict(result.fetchone())
+
+    def fail_sync_run(
+        self,
+        run_id: str,
+        message: str,
+        *,
+        retryable: bool = False,
+    ) -> None:
+        """Mark a queued or running attempt failed with diagnostic details."""
+        failures = json.dumps(
+            [
+                {
+                    "source_type": "sync",
+                    "category": "local",
+                    "retryable": retryable,
+                    "message": message,
+                }
+            ],
+            ensure_ascii=False,
+        )
+        self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_sync_runs
+                SET status = 'failed',
+                    failures = CAST(:failures AS jsonb),
+                    finished_at = now()
+                WHERE id = CAST(:run_id AS uuid)
+                  AND status IN ('queued', 'running')
+                """
+            ),
+            {"run_id": run_id, "failures": failures},
+        )
+
     def overview(self, user_id: str) -> dict[str, Any]:
         """Return owner-scoped record counts and synchronization coverage."""
         totals = self._conn.execute(

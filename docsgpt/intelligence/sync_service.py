@@ -44,6 +44,10 @@ GRAPH_ISSUE_LIMIT = 300
 logger = logging.getLogger(__name__)
 
 
+class SyncAlreadyRunningError(RuntimeError):
+    """Raised when an owner-scoped project already has an active sync."""
+
+
 class SyncCursor(BaseModel):
     """High-water marks returned by a successful incremental sync."""
 
@@ -123,15 +127,27 @@ class SyncService:
         self.graph_extractor = graph_extractor
         self.graph_enabled = graph_enabled
 
-    def run(self, project_id: str, user_id: str) -> IncrementalSyncSummary:
+    def run(
+        self,
+        project_id: str,
+        user_id: str,
+        *,
+        sync_run_id: str | None = None,
+    ) -> IncrementalSyncSummary:
         """Run the current incremental synchronization implementation.
 
         ``run`` remains the task-facing entry point while the explicit method
         makes the incremental behavior directly testable.
         """
-        return self.run_incremental(project_id, user_id)
+        return self.run_incremental(project_id, user_id, sync_run_id=sync_run_id)
 
-    def run_incremental(self, project_id: str, user_id: str) -> IncrementalSyncSummary:
+    def run_incremental(
+        self,
+        project_id: str,
+        user_id: str,
+        *,
+        sync_run_id: str | None = None,
+    ) -> IncrementalSyncSummary:
         """Synchronize one owner-scoped project from its last successful cursor.
 
         Args:
@@ -173,9 +189,16 @@ class SyncService:
         embedded_chunks = 0
         capped = False
 
-        run_id = self._start_sync_run(project_id)
+        run_id = str(sync_run_id) if sync_run_id is not None else None
         sync_id = run_id or str(uuid4())
         try:
+            if run_id is None:
+                run_id = self._start_sync_run(project_id, user_id)
+                if run_id is None:
+                    raise SyncAlreadyRunningError(
+                        "Intelligence project synchronization is already running"
+                    )
+                sync_id = run_id
             self._set_project_status(project_id, user_id, "syncing")
 
             document_collector = getattr(self.github, "iter_documents", None)
@@ -333,6 +356,10 @@ class SyncService:
                 external_updated_at=cursor.external_updated_at if cursor else None,
             )
             return summary
+        except SyncAlreadyRunningError:
+            # Another worker owns the project claim. Do not mark its project
+            # failed while this duplicate task exits.
+            raise
         except Exception as exc:
             failure = SyncFailure(
                 source_type="sync",
@@ -687,9 +714,20 @@ class SyncService:
         with self._readonly_repository_context() as repository:
             return repository.get_project(project_id, user_id)
 
-    def _start_sync_run(self, project_id: str) -> str | None:
-        """Create a running sync row when the repository supports it."""
+    def _start_sync_run(self, project_id: str, user_id: str | None = None) -> str | None:
+        """Claim and create a running sync row when the repository supports it."""
         with self._repository_context() as repository:
+            claimer = getattr(repository, "claim_project_sync", None)
+            if callable(claimer) and user_id is not None:
+                from docsgpt.core.settings import settings
+
+                row = claimer(
+                    project_id,
+                    user_id,
+                    stale_after_seconds=settings.INTELLIGENCE_SYNC_STALE_SECONDS,
+                )
+                return _row_id(row)
+
             starter = getattr(repository, "start_sync_run", None)
             if not callable(starter):
                 return None

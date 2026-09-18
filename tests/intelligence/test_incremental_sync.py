@@ -299,3 +299,14 @@ def test_local_failure_still_updates_project_when_run_finalization_fails() -> No
     assert (PROJECT_ID, "u1", "failed") in [
         call[:3] for call in repository.status_calls
     ]
+
+
+def test_duplicate_worker_does_not_fail_the_active_project() -> None:
+    repository = MemoryRepository()
+    repository.claim_project_sync = lambda *_args, **_kwargs: None
+
+    with pytest.raises(RuntimeError, match="already running"):
+        make_service(repository, FakeGitHub()).run_incremental(PROJECT_ID, "u1")
+
+    assert repository.project.get("status") != "failed"
+    assert all(call[2] != "failed" for call in repository.status_calls)

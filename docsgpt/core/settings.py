@@ -526,6 +526,8 @@ class Settings(BaseSettings):
     # A run row is pre-created as ``running``; a disconnect or crash can strand it there. The
     # beat reaper fails runs still ``running`` past this. Generous so a long run is never cut off.
     WORKFLOW_RUN_STALE_SECONDS: int = 3600
+    # OpenScout sync claims are reaped on the next claim after this age.
+    INTELLIGENCE_SYNC_STALE_SECONDS: int = Field(default=3600, ge=1)
     # Runner container caps, consumed by the docsgpt-sandbox compose service, not the app.
     # These cgroup limits are part of the untrusted-code security boundary.
     SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container

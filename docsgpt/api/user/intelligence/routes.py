@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import hashlib
 import logging
-from datetime import date, datetime, timezone
+from datetime import date
 import secrets
 from typing import Any
 from uuid import UUID
@@ -359,22 +359,54 @@ class IntelligenceProjectSync(Resource):
             logger.exception("Could not verify intelligence project for sync")
             return _error("internal error", 500)
 
+        try:
+            from docsgpt.core.settings import settings
+
+            with db_session() as conn:
+                claim = IntelligenceRepository(conn).claim_project_sync(
+                    project_id,
+                    user_id,
+                    stale_after_seconds=settings.INTELLIGENCE_SYNC_STALE_SECONDS,
+                )
+            if claim is None:
+                return _error("project sync already in progress", 409)
+            run_id = str(claim["id"])
+        except Exception:
+            logger.exception("Could not claim intelligence sync")
+            return _error("internal error", 500)
+
         payload = request.get_json(silent=True)
         payload_key = payload.get("idempotency_key") if isinstance(payload, dict) else None
+        client_key = request.headers.get("Idempotency-Key") or payload_key
         idempotency_key = (
-            request.headers.get("Idempotency-Key")
-            or payload_key
-            or f"openscout-sync:{project_id}:{datetime.now(timezone.utc).isoformat()}"
+            f"openscout-sync:{run_id}:{client_key}"
+            if client_key
+            else f"openscout-sync:{run_id}"
         )
         try:
             task = _sync_task().delay(
                 project_id=project_id,
                 user_id=user_id,
+                sync_run_id=run_id,
                 idempotency_key=idempotency_key,
             )
-            return _ok({"task_id": str(task.id)}, 202)
-        except Exception:
+            return _ok(
+                {
+                    "task_id": str(task.id),
+                    "run_id": run_id,
+                    "attempt_id": run_id,
+                },
+                202,
+            )
+        except Exception as exc:
             logger.exception("Could not dispatch intelligence sync")
+            try:
+                with db_session() as conn:
+                    repository = IntelligenceRepository(conn)
+                    repository.fail_sync_run(run_id, f"Could not enqueue sync task: {exc}")
+                    repository.set_project_status(project_id, user_id, "failed")
+            except Exception:
+                logger.exception("Could not recover failed intelligence sync dispatch")
             return _error("internal error", 500)
 
 

@@ -443,12 +443,14 @@ def test_create_project_requires_preflight_warning_confirmation(
 
 def test_sync_dispatches_owner_scoped_task(client, auth_headers, monkeypatch) -> None:
     project_id = str(uuid4())
+    run_id = str(uuid4())
     repository = MagicMock()
     repository.get_project.return_value = {
         "id": project_id,
         "user_id": "user-1",
         "repository": "langgenius/dify",
     }
+    repository.claim_project_sync.return_value = {"id": run_id}
     _patch_repository(monkeypatch, repository)
     task = MagicMock(id="task-1")
     sync_task = MagicMock()
@@ -465,10 +467,13 @@ def test_sync_dispatches_owner_scoped_task(client, auth_headers, monkeypatch) ->
 
     assert response.status_code == 202
     assert response.json["task_id"] == "task-1"
+    assert response.json["run_id"] == run_id
+    assert response.json["attempt_id"] == run_id
     sync_task.delay.assert_called_once_with(
         project_id=project_id,
         user_id="user-1",
-        idempotency_key="sync-key-1",
+        sync_run_id=run_id,
+        idempotency_key=f"openscout-sync:{run_id}:sync-key-1",
     )
 
 
@@ -476,12 +481,14 @@ def test_sync_generates_project_scoped_key_when_missing(
     client, auth_headers, monkeypatch
 ) -> None:
     project_id = str(uuid4())
+    run_id = str(uuid4())
     repository = MagicMock()
     repository.get_project.return_value = {
         "id": project_id,
         "user_id": "user-1",
         "repository": "langgenius/dify",
     }
+    repository.claim_project_sync.return_value = {"id": run_id}
     _patch_repository(monkeypatch, repository)
     task = MagicMock(id="task-2")
     sync_task = MagicMock()
@@ -498,7 +505,65 @@ def test_sync_generates_project_scoped_key_when_missing(
 
     assert response.status_code == 202
     dispatched_key = sync_task.delay.call_args.kwargs["idempotency_key"]
-    assert dispatched_key.startswith(f"openscout-sync:{project_id}:")
+    assert dispatched_key == f"openscout-sync:{run_id}"
+
+
+def test_sync_returns_conflict_when_project_is_already_claimed(
+    client, auth_headers, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    repository.get_project.return_value = {"id": project_id, "user_id": "user-1"}
+    repository.claim_project_sync.return_value = None
+    _patch_repository(monkeypatch, repository)
+    sync_task = MagicMock()
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.sync_intelligence_project", sync_task
+    )
+
+    response = client.post(
+        f"/api/intelligence/projects/{project_id}/sync",
+        headers={**auth_headers, "Idempotency-Key": "different-client-key"},
+        json={},
+    )
+
+    assert response.status_code == 409
+    assert response.json == {
+        "success": False,
+        "message": "project sync already in progress",
+    }
+    sync_task.delay.assert_not_called()
+
+
+def test_sync_enqueue_failure_marks_claimed_run_and_project_failed(
+    client, auth_headers, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    run_id = str(uuid4())
+    repository = MagicMock()
+    repository.get_project.return_value = {"id": project_id, "user_id": "user-1"}
+    repository.claim_project_sync.return_value = {"id": run_id}
+    _patch_repository(monkeypatch, repository)
+    sync_task = MagicMock()
+    sync_task.delay.side_effect = RuntimeError("broker unavailable")
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.sync_intelligence_project", sync_task
+    )
+
+    response = client.post(
+        f"/api/intelligence/projects/{project_id}/sync",
+        headers=auth_headers,
+        json={},
+    )
+
+    assert response.status_code == 500
+    repository.fail_sync_run.assert_called_once()
+    assert repository.fail_sync_run.call_args.args[0] == run_id
+    repository.set_project_status.assert_called_once_with(
+        project_id,
+        "user-1",
+        "failed",
+    )
 
 
 def test_sync_run_and_overview_are_owner_scoped(

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from docsgpt.api.user.idempotency import with_idempotency
 from docsgpt.celery_init import celery
 from docsgpt.intelligence.github_client import GitHubClient
 from docsgpt.intelligence.sync_service import RecoverableGitHubError, SyncService
+from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+
+logger = logging.getLogger(__name__)
 
 
 def build_sync_service() -> SyncService:
@@ -59,11 +63,33 @@ def sync_intelligence_project(
     *,
     project_id: str,
     user_id: str,
+    sync_run_id: str | None = None,
     idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """Synchronize a project and return a JSON-serializable summary."""
     del self
-    summary = build_sync_service().run(project_id, user_id)
+    try:
+        if sync_run_id is None:
+            summary = build_sync_service().run(project_id, user_id)
+        else:
+            summary = build_sync_service().run(
+                project_id,
+                user_id,
+                sync_run_id=sync_run_id,
+            )
+    except Exception as exc:
+        if sync_run_id is not None:
+            try:
+                with db_session() as conn:
+                    repository = IntelligenceRepository(conn)
+                    repository.fail_sync_run(sync_run_id, str(exc))
+                    repository.set_project_status(project_id, user_id, "failed")
+            except Exception:
+                logger.exception(
+                    "Could not mark failed intelligence sync %s",
+                    sync_run_id,
+                )
+        raise
     return summary.model_dump(mode="json")
 
 
