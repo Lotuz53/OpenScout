@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 from uuid import uuid4
 from xml.sax.saxutils import escape
 
@@ -17,9 +17,16 @@ from docsgpt.intelligence.comparison import ComparisonResult
 from docsgpt.intelligence.schemas import (
     Coverage,
     IntelligenceModel,
+    MAX_EVIDENCE_EXCERPT_LENGTH,
+    MAX_FILTER_VALUE_LENGTH,
+    MAX_ID_LENGTH,
+    MAX_PROJECT_IDS,
+    MAX_REPORT_RESULTS,
+    MAX_URL_LENGTH,
     QueryResult,
     SourceType,
 )
+from docsgpt.core.settings import settings
 
 
 REPORT_SECTION_HEADINGS = (
@@ -35,20 +42,26 @@ REPORT_SECTION_HEADINGS = (
 class ReportSection(IntelligenceModel):
     """One fixed report section with deterministic text blocks."""
 
-    heading: str = Field(min_length=1)
-    paragraphs: list[str] = Field(default_factory=list)
-    bullets: list[str] = Field(default_factory=list)
+    heading: str = Field(min_length=1, max_length=256)
+    paragraphs: list[Annotated[str, Field(max_length=32_000)]] = Field(
+        default_factory=list,
+        max_length=128,
+    )
+    bullets: list[Annotated[str, Field(max_length=8000)]] = Field(
+        default_factory=list,
+        max_length=256,
+    )
 
 
 class ReportSource(IntelligenceModel):
     """A source card shared by Markdown and PDF renderers."""
 
-    id: str = Field(min_length=1)
-    title: str
-    url: str = Field(min_length=1)
-    repository: str
-    source_type: str
-    excerpt: str = ""
+    id: str = Field(min_length=1, max_length=MAX_ID_LENGTH)
+    title: str = Field(min_length=1, max_length=512)
+    url: str = Field(min_length=1, max_length=MAX_URL_LENGTH)
+    repository: str = Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)
+    source_type: str = Field(min_length=1, max_length=64)
+    excerpt: str = Field(default="", max_length=MAX_EVIDENCE_EXCERPT_LENGTH)
 
 
 def _empty_report_coverage() -> Coverage:
@@ -64,14 +77,19 @@ def _empty_report_coverage() -> Coverage:
 class ReportDocument(IntelligenceModel):
     """The immutable structured document used by every report renderer."""
 
-    title: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
-    project_ids: list[str]
-    sections: list[ReportSection]
-    sources: list[ReportSource]
+    title: str = Field(min_length=1, max_length=256)
+    user_id: str = Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)
+    project_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        max_length=MAX_PROJECT_IDS,
+    )
+    sections: list[ReportSection] = Field(max_length=16)
+    sources: list[ReportSource] = Field(max_length=512)
     coverage: Coverage = Field(default_factory=_empty_report_coverage)
-    id: str | None = None
-    source_ids: list[str] = Field(default_factory=list)
+    id: Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)] | None = None
+    source_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        default_factory=list,
+        max_length=512,
+    )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="before")
@@ -99,6 +117,10 @@ class ReportNotFoundError(LookupError):
 
 class ReportExportError(RuntimeError):
     """Raised when rendering a saved report fails without deleting it."""
+
+
+class ReportSizeLimitError(ValueError):
+    """Raised when a report exceeds a configured rendering limit."""
 
 
 class ReportService:
@@ -144,6 +166,8 @@ class ReportService:
             raise ValueError("results must be a non-empty list")
         if not results:
             raise ValueError("results must be a non-empty list")
+        if len(results) > MAX_REPORT_RESULTS:
+            raise ValueError(f"results must contain at most {MAX_REPORT_RESULTS} items")
         validated_results = [_validate_result(result) for result in results]
 
         document = _build_report_document(
@@ -187,7 +211,12 @@ class ReportService:
         row = self._load_row(report_id)
         try:
             document = ReportDocument.model_validate(row.get("report_data", row))
+            _enforce_report_size(document)
             rendered = render_markdown(document) if format == "markdown" else render_pdf(document)
+        except ReportSizeLimitError:
+            raise
+        except ValidationError as exc:
+            raise ReportSizeLimitError("report exceeds configured size limits") from exc
         except Exception as exc:
             raise ReportExportError("report export failed; retryable") from exc
         return rendered.encode("utf-8") if isinstance(rendered, str) else rendered
@@ -213,6 +242,7 @@ class ReportService:
 def render_markdown(report: ReportDocument) -> str:
     """Render a validated report document as UTF-8 Markdown."""
     _require_report_document(report)
+    _enforce_report_size(report)
     lines = [f"# {report.title}", ""]
     for section in report.sections:
         lines.extend([f"## {section.heading}", ""])
@@ -229,6 +259,7 @@ def render_markdown(report: ReportDocument) -> str:
 def render_pdf(report: ReportDocument) -> bytes:
     """Render a validated report document as a PDF with CJK-capable text."""
     _require_report_document(report)
+    _enforce_report_size(report)
     try:
         from reportlab.lib.enums import TA_LEFT
         from reportlab.lib.pagesizes import A4
@@ -566,6 +597,8 @@ def _normalize_project_ids(project_ids: Sequence[str]) -> list[str]:
     normalized = [str(project_id) for project_id in project_ids if str(project_id)]
     if not normalized:
         raise ValueError("project_ids must be a non-empty list")
+    if len(normalized) > MAX_PROJECT_IDS:
+        raise ValueError(f"project_ids must contain at most {MAX_PROJECT_IDS} items")
     return list(dict.fromkeys(normalized))
 
 
@@ -589,11 +622,22 @@ def _require_report_document(report: Any) -> None:
         raise TypeError("renderer expects ReportDocument")
 
 
+def _enforce_report_size(report: ReportDocument) -> None:
+    """Reject oversized validated documents before Markdown/PDF rendering."""
+    serialized_size = len(report.model_dump_json())
+    if serialized_size > settings.INTELLIGENCE_MAX_REPORT_CHARS:
+        raise ReportSizeLimitError(
+            "report exceeds configured size limit of "
+            f"{settings.INTELLIGENCE_MAX_REPORT_CHARS} characters"
+        )
+
+
 __all__ = [
     "REPORT_SECTION_HEADINGS",
     "ReportDocument",
     "ReportExportError",
     "ReportNotFoundError",
+    "ReportSizeLimitError",
     "ReportService",
     "ReportSource",
     "ReportSection",

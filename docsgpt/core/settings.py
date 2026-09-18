@@ -116,6 +116,9 @@ class Settings(BaseSettings):
     UPLOAD_MAX_REQUEST_BYTES: int = Field(default=256 * 1024 * 1024, gt=0)
     UPLOAD_MAX_FILE_BYTES: int = Field(default=100 * 1024 * 1024, gt=0)
     PARSE_SPEC_MAX_BYTES: int = Field(default=10 * 1024 * 1024, gt=0)
+    # JSON intelligence requests are kept separate from the much larger upload cap.
+    INTELLIGENCE_MAX_JSON_BYTES: int = Field(default=2 * 1024 * 1024, gt=0)
+    INTELLIGENCE_MAX_REPORT_CHARS: int = Field(default=2_000_000, gt=0)
     # ZIP limits apply cumulatively across nested archives in one extraction.
     UPLOAD_MAX_ARCHIVE_BYTES: int = Field(default=250 * 1024 * 1024, gt=0)
     UPLOAD_MAX_ARCHIVE_FILES: int = Field(default=10_000, gt=0)

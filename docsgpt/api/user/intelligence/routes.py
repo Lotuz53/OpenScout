@@ -23,7 +23,14 @@ from docsgpt.intelligence.report_service import (
     ReportNotFoundError,
     ReportService,
 )
-from docsgpt.intelligence.schemas import QueryFilters, QueryRequest, QueryResult
+from docsgpt.intelligence.schemas import (
+    ComparisonRequest,
+    MAX_PROJECT_IDS,
+    QueryFilters,
+    QueryRequest,
+    QueryResult,
+    ReportRequest,
+)
 from docsgpt.intelligence.topics import topic_trends
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
@@ -152,6 +159,8 @@ def _split_query_values(*names: str) -> list[str]:
 def _parse_topic_query() -> tuple[list[str], QueryFilters]:
     """Parse topic project ids and record filters from query parameters."""
     project_ids = _split_query_values("project_ids", "project_id")
+    if len(project_ids) > MAX_PROJECT_IDS:
+        raise ValueError(f"project_ids must contain at most {MAX_PROJECT_IDS} items")
     for project_id in project_ids:
         if not looks_like_uuid(project_id):
             raise ValueError("project_ids must contain UUIDs")
@@ -173,47 +182,30 @@ def _parse_topic_query() -> tuple[list[str], QueryFilters]:
 def _parse_comparison_payload() -> tuple[list[str], list[str], QueryFilters]:
     """Validate project ids, comparison dimensions, and explicit filters."""
     payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        raise ValueError("JSON object required")
-
-    project_ids = payload.get("project_ids")
-    if not isinstance(project_ids, list) or not project_ids:
-        raise ValueError("project_ids must be a non-empty list")
-    if any(not isinstance(project_id, str) or not looks_like_uuid(project_id) for project_id in project_ids):
-        raise ValueError("project_ids must contain UUIDs")
-
-    dimensions = payload.get("dimensions")
-    if not isinstance(dimensions, list) or not dimensions:
-        raise ValueError("dimensions must be a non-empty list")
-    if any(not isinstance(dimension, str) or not dimension.strip() for dimension in dimensions):
-        raise ValueError("dimensions must contain non-empty strings")
-
     try:
-        filters = QueryFilters.model_validate(payload.get("filters") or {})
+        parsed = ComparisonRequest.model_validate(payload)
     except ValidationError as exc:
         raise ValueError(exc.errors()[0]["msg"]) from exc
-    return list(dict.fromkeys(project_ids)), list(dict.fromkeys(dimensions)), filters
+
+    project_ids = parsed.project_ids
+    if any(not isinstance(project_id, str) or not looks_like_uuid(project_id) for project_id in project_ids):
+        raise ValueError("project_ids must contain UUIDs")
+    return list(dict.fromkeys(project_ids)), list(dict.fromkeys(parsed.dimensions)), parsed.filters
 
 
 def _parse_report_payload() -> tuple[list[str], list[QueryResult | ComparisonResult]]:
     """Validate project ids and saved structured results for a report."""
     payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        raise ValueError("JSON object required")
+    try:
+        parsed = ReportRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(exc.errors()[0]["msg"]) from exc
 
-    project_ids = payload.get("project_ids")
-    if not isinstance(project_ids, list) or not project_ids:
-        raise ValueError("project_ids must be a non-empty list")
+    project_ids = parsed.project_ids
     if any(not isinstance(project_id, str) or not looks_like_uuid(project_id) for project_id in project_ids):
         raise ValueError("project_ids must contain UUIDs")
-
-    results = payload.get("results")
-    if not isinstance(results, list) or not results:
-        raise ValueError("results must be a non-empty list")
-    if any(not isinstance(result, dict) for result in results):
-        raise ValueError("results must contain JSON objects")
     validated_results: list[QueryResult | ComparisonResult] = []
-    for result in results:
+    for result in parsed.results:
         try:
             validated_results.append(QueryResult.model_validate(result))
         except ValidationError:

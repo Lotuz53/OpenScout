@@ -5,9 +5,27 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+
+
+MAX_PROJECT_IDS = 32
+MAX_REPOSITORIES = 64
+MAX_FILTER_VALUES = 64
+MAX_FILTER_VALUE_LENGTH = 256
+MAX_ID_LENGTH = 256
+MAX_COMPARISON_DIMENSIONS = 64
+MAX_DIMENSION_LENGTH = 128
+MAX_REPORT_RESULTS = 32
+MAX_QUERY_CLAIMS = 256
+MAX_QUERY_EVIDENCE = 512
+MAX_EVIDENCE_IDS = 64
+MAX_CLAIM_TEXT_LENGTH = 4000
+MAX_ANSWER_LENGTH = 16_000
+MAX_EVIDENCE_TITLE_LENGTH = 512
+MAX_EVIDENCE_EXCERPT_LENGTH = 8000
+MAX_URL_LENGTH = 2048
 
 
 class IntelligenceModel(BaseModel):
@@ -147,8 +165,14 @@ class SyncFailure(IntelligenceModel):
 class QueryFilters(IntelligenceModel):
     """Explicit filters applied to an intelligence query."""
 
-    repositories: list[str] = Field(default_factory=list)
-    source_types: list[SourceType] = Field(default_factory=list)
+    repositories: list[Annotated[str, Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)]] = Field(
+        default_factory=list,
+        max_length=MAX_FILTER_VALUES,
+    )
+    source_types: list[SourceType] = Field(
+        default_factory=list,
+        max_length=MAX_FILTER_VALUES,
+    )
     date_from: date | None = None
     date_to: date | None = None
 
@@ -161,27 +185,57 @@ class QueryRequest(IntelligenceModel):
     intent: QueryIntent | None = None
 
 
+class ComparisonRequest(IntelligenceModel):
+    """Bounded request payload for product comparisons."""
+
+    project_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        min_length=1,
+        max_length=MAX_PROJECT_IDS,
+    )
+    dimensions: list[Annotated[str, Field(min_length=1, max_length=MAX_DIMENSION_LENGTH)]] = Field(
+        min_length=1,
+        max_length=MAX_COMPARISON_DIMENSIONS,
+    )
+    filters: QueryFilters = Field(default_factory=QueryFilters)
+
+
+class ReportRequest(IntelligenceModel):
+    """Bounded request payload for reports built from saved results."""
+
+    project_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        min_length=1,
+        max_length=MAX_PROJECT_IDS,
+    )
+    results: list[dict[str, Any]] = Field(
+        min_length=1,
+        max_length=MAX_REPORT_RESULTS,
+    )
+
+
 class Evidence(IntelligenceModel):
     """A source excerpt that supports a query claim."""
 
-    id: str
-    record_id: str
-    repository: str
+    id: Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]
+    record_id: Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]
+    repository: Annotated[str, Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)]
     source_type: SourceType
-    title: str
-    excerpt: str
-    source_url: HttpUrl
+    title: Annotated[str, Field(min_length=1, max_length=MAX_EVIDENCE_TITLE_LENGTH)]
+    excerpt: Annotated[str, Field(max_length=MAX_EVIDENCE_EXCERPT_LENGTH)]
+    source_url: Annotated[HttpUrl, Field(max_length=MAX_URL_LENGTH)]
     occurred_at: datetime | None = None
-    author: str | None = None
+    author: Annotated[str, Field(max_length=MAX_FILTER_VALUE_LENGTH)] | None = None
 
 
 class Claim(IntelligenceModel):
     """A generated statement with traceable evidence references."""
 
-    id: str
-    text: str
+    id: Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]
+    text: Annotated[str, Field(min_length=1, max_length=MAX_CLAIM_TEXT_LENGTH)]
     kind: ClaimKind
-    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        default_factory=list,
+        max_length=MAX_EVIDENCE_IDS,
+    )
     confidence: Confidence = Confidence.LOW
 
     @model_validator(mode="after")
@@ -195,7 +249,9 @@ class Claim(IntelligenceModel):
 class Coverage(IntelligenceModel):
     """The data scope used to produce a result or synchronization summary."""
 
-    repositories: list[str]
+    repositories: list[Annotated[str, Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)]] = Field(
+        max_length=MAX_REPOSITORIES,
+    )
     date_from: date | None
     date_to: date | None
     counts: dict[SourceType, int]
@@ -225,11 +281,11 @@ class RetrievalTrace(IntelligenceModel):
 
     intent: QueryIntent
     strategy: RetrievalStrategy
-    fallback_reason: str | None = None
+    fallback_reason: Annotated[str, Field(max_length=2000)] | None = None
     applied_filters: QueryFilters
     explicit_filters: QueryFilters = Field(default_factory=QueryFilters)
     inferred_filters: QueryFilters = Field(default_factory=QueryFilters)
-    filter_sources: list[FilterSource] = Field(default_factory=list)
+    filter_sources: list[FilterSource] = Field(default_factory=list, max_length=MAX_FILTER_VALUES)
 
 
 class RouteDecision(IntelligenceModel):
@@ -245,9 +301,9 @@ class RouteDecision(IntelligenceModel):
 class QueryResult(IntelligenceModel):
     """A complete evidence-backed query response."""
 
-    answer: str
-    claims: list[Claim]
-    evidence: list[Evidence]
+    answer: Annotated[str, Field(max_length=MAX_ANSWER_LENGTH)]
+    claims: list[Claim] = Field(max_length=MAX_QUERY_CLAIMS)
+    evidence: list[Evidence] = Field(max_length=MAX_QUERY_EVIDENCE)
     coverage: Coverage
     latency_ms: int
     trace: RetrievalTrace

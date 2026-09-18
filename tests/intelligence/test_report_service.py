@@ -9,6 +9,7 @@ from uuid import uuid4
 
 import pytest
 from pypdf import PdfReader
+from pydantic import ValidationError
 
 from docsgpt.intelligence.report_service import (
     REPORT_SECTION_HEADINGS,
@@ -16,9 +17,11 @@ from docsgpt.intelligence.report_service import (
     ReportService,
     ReportSource,
     ReportSection,
+    ReportSizeLimitError,
     render_markdown,
     render_pdf,
 )
+from docsgpt.core.settings import settings
 from docsgpt.intelligence.schemas import (
     Claim,
     ClaimKind,
@@ -135,6 +138,22 @@ def test_renderers_accept_only_report_documents(report: ReportDocument) -> None:
         render_markdown(report.model_dump(mode="json"))  # type: ignore[arg-type]
     with pytest.raises(TypeError):
         render_pdf(report.model_dump(mode="json"))  # type: ignore[arg-type]
+
+
+def test_report_document_bounds_sections_and_sources(report: ReportDocument) -> None:
+    report_data = report.model_dump(mode="json")
+    report_data["sections"] = report.sections * 3
+    with pytest.raises(ValidationError, match="at most"):
+        ReportDocument(**report_data)
+
+
+def test_renderers_reject_report_over_configured_size(
+    report: ReportDocument, monkeypatch
+) -> None:
+    monkeypatch.setattr(settings, "INTELLIGENCE_MAX_REPORT_CHARS", 64)
+
+    with pytest.raises(ReportSizeLimitError, match="size limit"):
+        render_markdown(report)
 
 
 def test_create_persists_all_fixed_sections(query_result: QueryResult) -> None:

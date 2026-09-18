@@ -25,6 +25,10 @@ from docsgpt.intelligence.schemas import (
     QueryIntent,
     RetrievalStrategy,
     SourceType,
+    MAX_COMPARISON_DIMENSIONS,
+    MAX_DIMENSION_LENGTH,
+    MAX_PROJECT_IDS,
+    MAX_REPORT_RESULTS,
 )
 from docsgpt.intelligence.topics import TopicTrend
 from docsgpt.seed.intelligence_projects import (
@@ -296,6 +300,52 @@ def test_comparison_returns_owner_scoped_matrix(client, auth_headers, monkeypatc
         ["enterprise_sso"],
         QueryFilters(repositories=["langgenius/dify"]),
     )
+
+
+@pytest.mark.parametrize(
+    ("project_ids", "dimensions", "message_fragment"),
+    [
+        ([str(uuid4())] * (MAX_PROJECT_IDS + 1), ["enterprise_sso"], "at most"),
+        ([str(uuid4())], ["dimension"] * (MAX_COMPARISON_DIMENSIONS + 1), "at most"),
+        ([str(uuid4())], ["x" * (MAX_DIMENSION_LENGTH + 1)], "at most"),
+    ],
+)
+def test_comparison_rejects_oversized_collections_and_dimensions(
+    client, auth_headers, project_ids, dimensions, message_fragment
+) -> None:
+    response = client.post(
+        "/api/intelligence/comparison",
+        headers=auth_headers,
+        json={"project_ids": project_ids, "dimensions": dimensions},
+    )
+
+    assert response.status_code == 400
+    assert message_fragment in response.json["message"]
+
+
+def test_report_rejects_oversized_results_collection(client, auth_headers) -> None:
+    response = client.post(
+        "/api/intelligence/reports",
+        headers=auth_headers,
+        json={
+            "project_ids": [str(uuid4())],
+            "results": [{}] * (MAX_REPORT_RESULTS + 1),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "at most" in response.json["message"]
+
+
+def test_query_rejects_malformed_json(client, auth_headers, mock_query_service) -> None:
+    response = client.post(
+        "/api/intelligence/query",
+        headers={**auth_headers, "Content-Type": "application/json"},
+        data='{"question":',
+    )
+
+    assert response.status_code == 400
+    mock_query_service.query.assert_not_called()
 
 
 def test_project_lookup_is_owner_scoped(client, auth_headers, monkeypatch) -> None:
@@ -755,6 +805,37 @@ def test_report_downloads_saved_document_without_query(
     assert pdf_response.mimetype == "application/pdf"
     assert pdf_response.data.startswith(b"%PDF")
     assert mock_query_service.query.call_count == 0
+
+
+def test_report_download_rejects_oversized_saved_document(
+    client, auth_headers, mock_query_service, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    report_id = str(uuid4())
+    report_data = ReportService().create(
+        "user-1",
+        [project_id],
+        [mock_query_service.query.return_value],
+    )
+    repository = MagicMock()
+    repository.get_report.return_value = {
+        "id": report_id,
+        "user_id": "user-1",
+        "report_data": report_data,
+    }
+    _patch_repository(monkeypatch, repository)
+    monkeypatch.setattr(
+        "docsgpt.intelligence.report_service.settings.INTELLIGENCE_MAX_REPORT_CHARS",
+        64,
+    )
+
+    response = client.get(
+        f"/api/intelligence/reports/{report_id}/download?format=markdown",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "size limit" in response.json["message"]
 
 
 def test_report_export_failure_is_retryable_and_keeps_row(

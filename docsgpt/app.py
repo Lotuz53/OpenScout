@@ -136,9 +136,13 @@ def _upload_limit_error_payload() -> dict[str, bool | str]:
     active_limit = request.max_content_length
     if active_limit is None:
         active_limit = settings.UPLOAD_MAX_REQUEST_BYTES
+    if request.path.startswith("/api/intelligence/"):
+        message = f"Request exceeds the {active_limit}-byte intelligence JSON limit"
+    else:
+        message = upload_request_limit_message(active_limit)
     return {
         "success": False,
-        "message": upload_request_limit_message(active_limit),
+        "message": message,
     }
 
 
@@ -262,6 +266,25 @@ def enforce_document_upload_request_size_limit():
         if request.path == "/api/parse_spec" and request.is_json
         else settings.UPLOAD_MAX_REQUEST_BYTES
     )
+    request.max_content_length = request_limit
+    if (
+        request.content_length is not None
+        and request.content_length > request_limit
+    ):
+        raise RequestEntityTooLarge()
+    return None
+
+
+@app.before_request
+def enforce_intelligence_json_request_size_limit():
+    """Bound JSON bodies for owner-scoped intelligence APIs."""
+    if (
+        request.method in {"OPTIONS", "GET", "HEAD"}
+        or not request.path.startswith("/api/intelligence/")
+        or not request.is_json
+    ):
+        return None
+    request_limit = settings.INTELLIGENCE_MAX_JSON_BYTES
     request.max_content_length = request_limit
     if (
         request.content_length is not None

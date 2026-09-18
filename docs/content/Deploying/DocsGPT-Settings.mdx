@@ -201,6 +201,21 @@ These byte/count limits and the non-negative nesting depth can be overridden in 
 The request limit intentionally applies only to public upload routes; internal
 worker index transfers use their own trusted service boundary.
 
+## Intelligence API Limits
+
+OpenScout intelligence JSON requests and report exports have independent limits
+so large comparison or report payloads cannot consume unbounded memory, database,
+LLM, or PDF-rendering resources.
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `INTELLIGENCE_MAX_JSON_BYTES` | `2097152` | Maximum JSON request body for `/api/intelligence/*`; oversized requests return HTTP 413. |
+| `INTELLIGENCE_MAX_REPORT_CHARS` | `2000000` | Maximum serialized report size accepted by Markdown and PDF export. |
+
+These settings can be overridden in `.env`. Structured request models also cap
+project selections, comparison dimensions, result collections, evidence, claims,
+sections, sources, and their text fields.
+
 ## Document Parsing
 
 Uploaded sources and chat attachments are converted to Markdown before

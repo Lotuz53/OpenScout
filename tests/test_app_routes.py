@@ -199,6 +199,24 @@ class TestDocumentUploadRequestSizeLimits:
         }
 
 
+class TestIntelligenceRequestSizeLimits:
+
+    @pytest.mark.unit
+    def test_oversized_intelligence_json_rejected_before_route_parsing(self, client):
+        with patch("docsgpt.app.settings.INTELLIGENCE_MAX_JSON_BYTES", 32):
+            response = client.post(
+                "/api/intelligence/query",
+                data=b'{"question":"' + b"x" * 100,
+                content_type="application/json",
+            )
+
+        assert response.status_code == 413
+        assert response.get_json() == {
+            "success": False,
+            "message": "Request exceeds the 32-byte intelligence JSON limit",
+        }
+
+
 class TestAuthenticateRequest:
 
     @pytest.mark.unit

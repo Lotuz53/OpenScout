@@ -5,11 +5,19 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
-from docsgpt.intelligence.schemas import IntelligenceModel, QueryFilters, SourceType
+from docsgpt.intelligence.schemas import (
+    MAX_EVIDENCE_IDS,
+    MAX_FILTER_VALUE_LENGTH,
+    MAX_ID_LENGTH,
+    MAX_REPOSITORIES,
+    IntelligenceModel,
+    QueryFilters,
+    SourceType,
+)
 
 
 ComparisonStatus = Literal["supported", "not_supported", "unknown"]
@@ -69,11 +77,14 @@ class ComparisonCell(IntelligenceModel):
     """One product's evidence-backed status for a feature dimension."""
 
     status: ComparisonStatus
-    display_label: str
+    display_label: str = Field(min_length=1, max_length=512)
     first_evidence_date: date | None = None
     community_signal_count: int = 0
-    evidence_ids: list[str] = Field(default_factory=list)
-    coverage_warning: str | None = None
+    evidence_ids: list[Annotated[str, Field(min_length=1, max_length=MAX_ID_LENGTH)]] = Field(
+        default_factory=list,
+        max_length=MAX_EVIDENCE_IDS,
+    )
+    coverage_warning: Annotated[str, Field(max_length=2000)] | None = None
 
     @property
     def signal_count(self) -> int:
@@ -84,16 +95,21 @@ class ComparisonCell(IntelligenceModel):
 class ComparisonRow(IntelligenceModel):
     """Comparison cells for one requested feature dimension."""
 
-    dimension: str
-    cells: dict[str, ComparisonCell]
+    dimension: str = Field(min_length=1, max_length=128)
+    cells: dict[str, ComparisonCell] = Field(max_length=MAX_REPOSITORIES)
 
 
 class ComparisonResult(IntelligenceModel):
     """Complete product comparison matrix and coverage warnings."""
 
-    repositories: list[str]
-    rows: list[ComparisonRow]
-    coverage_warnings: dict[str, str | None] = Field(default_factory=dict)
+    repositories: list[Annotated[str, Field(min_length=1, max_length=MAX_FILTER_VALUE_LENGTH)]] = Field(
+        max_length=MAX_REPOSITORIES,
+    )
+    rows: list[ComparisonRow] = Field(max_length=64)
+    coverage_warnings: dict[str, Annotated[str | None, Field(max_length=2000)]] = Field(
+        default_factory=dict,
+        max_length=MAX_REPOSITORIES,
+    )
 
 
 class ComparisonService:
