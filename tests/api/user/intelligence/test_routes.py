@@ -31,6 +31,7 @@ from docsgpt.intelligence.schemas import (
     MAX_REPORT_RESULTS,
 )
 from docsgpt.intelligence.topics import TopicTrend
+from docsgpt.security.rate_limit import RateLimitDecision
 from docsgpt.seed.intelligence_projects import (
     STAGE_A_WINDOW_END,
     STAGE_A_WINDOW_START,
@@ -201,6 +202,25 @@ def test_query_shape(client, auth_headers, mock_query_service) -> None:
         ),
         "user-1",
     )
+
+
+def test_query_rate_limit_returns_retry_after(
+    client, auth_headers, mock_query_service, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        "docsgpt.security.rate_limit.check_rate_limit",
+        lambda *args, **kwargs: RateLimitDecision(False, retry_after=7),
+    )
+
+    response = client.post(
+        "/api/intelligence/query",
+        headers=auth_headers,
+        json={"question": "Which product added SSO?"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "7"
+    mock_query_service.query.assert_not_called()
 
 
 def test_query_rejects_invalid_request(client, auth_headers, mock_query_service) -> None:

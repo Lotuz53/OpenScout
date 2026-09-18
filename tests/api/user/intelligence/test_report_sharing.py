@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from docsgpt.api.public.intelligence import public_intelligence
 from docsgpt.api.user.intelligence.routes import intelligence_ns
+from docsgpt.security.rate_limit import RateLimitDecision
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 
 
@@ -161,6 +162,18 @@ def test_public_report_projection_redacts_internal_fields(
     repository.get_public_report.assert_called_once_with(
         hashlib.sha256(shared_report.token.encode("utf-8")).hexdigest()
     )
+
+
+def test_public_report_read_is_rate_limited(client, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "docsgpt.security.rate_limit.check_rate_limit",
+        lambda *args, **kwargs: RateLimitDecision(False, retry_after=9),
+    )
+
+    response = client.get(f"/api/public/intelligence/reports/{SHARED_TOKEN}")
+
+    assert response.status_code == 429
+    assert response.headers["Retry-After"] == "9"
 
 
 def test_revoked_token_returns_not_found(client, monkeypatch) -> None:

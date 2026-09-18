@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 from flask import Blueprint, jsonify
 
+from docsgpt.security.rate_limit import rate_limit
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly
 
@@ -123,6 +124,7 @@ def project_public_report(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 @public_intelligence.get("/reports/<string:token>")
+@rate_limit("public_report_read")
 def get_public_report(token: str):
     """Return a shared report by token without requiring authentication."""
     token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()

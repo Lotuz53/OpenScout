@@ -32,6 +32,7 @@ from docsgpt.intelligence.schemas import (
     ReportRequest,
 )
 from docsgpt.intelligence.topics import topic_trends
+from docsgpt.security.rate_limit import rate_limit
 from docsgpt.storage.db.base_repository import looks_like_uuid
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly, db_session
@@ -239,6 +240,7 @@ def build_preflight_service() -> RepositoryPreflightService:
 class IntelligencePreflight(Resource):
     """Inspect a user-supplied repository before project creation."""
 
+    @rate_limit("intelligence_preflight")
     def post(self):
         """Return public repository scope, estimates, and setup warnings."""
         if not _current_user():
@@ -334,6 +336,7 @@ class IntelligenceProject(Resource):
 class IntelligenceProjectSync(Resource):
     """Dispatch an owner-checked project synchronization task."""
 
+    @rate_limit("intelligence_sync")
     def post(self, project_id: str):
         """Queue a synchronization after verifying project ownership."""
         user_id = _current_user()
@@ -446,6 +449,7 @@ class IntelligenceOverview(Resource):
 class IntelligenceQuery(Resource):
     """Answer a first-version hybrid-only intelligence query."""
 
+    @rate_limit("intelligence_query")
     def post(self):
         """Validate the query contract and delegate to QueryService."""
         user_id = _current_user()
@@ -500,6 +504,7 @@ class IntelligenceTopics(Resource):
 class IntelligenceComparison(Resource):
     """Return an owner-scoped evidence-backed product comparison."""
 
+    @rate_limit("intelligence_comparison")
     def post(self):
         """Build a comparison matrix from explicit project and feature inputs."""
         user_id = _current_user()
@@ -527,6 +532,7 @@ class IntelligenceComparison(Resource):
 class IntelligenceReports(Resource):
     """Create owner-scoped reports from already-saved intelligence results."""
 
+    @rate_limit("intelligence_report_create")
     def post(self):
         """Persist the structured report document before any rendering."""
         user_id = _current_user()
@@ -636,6 +642,10 @@ class IntelligenceReportShare(Resource):
 class IntelligenceReportDownload(Resource):
     """Download a saved report as Markdown or PDF."""
 
+    @rate_limit(
+        "intelligence_report_pdf",
+        when=lambda: request.args.get("format", "markdown") == "pdf",
+    )
     def get(self, report_id: str):
         """Render only the saved report document and return an attachment."""
         user_id = _current_user()
