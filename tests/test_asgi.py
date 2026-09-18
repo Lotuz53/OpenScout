@@ -74,6 +74,9 @@ def test_mcp_endpoint_mounted_and_lifespan_runs():
     assert r.status_code == 200
     assert "mcp-session-id" in {k.lower() for k in r.headers.keys()}
     assert r.headers.get("access-control-expose-headers") == "Mcp-Session-Id"
+    assert r.headers.get("x-content-type-options") == "nosniff"
+    assert r.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'self'" in r.headers.get("content-security-policy", "")
 
 
 @pytest.mark.unit

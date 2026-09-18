@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from a2wsgi import WSGIMiddleware
 from starlette.applications import Starlette
+from starlette.datastructures import MutableHeaders
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
@@ -15,6 +16,7 @@ from docsgpt.app import app as flask_app
 from docsgpt.core.cors import cors_allowed_origins
 from docsgpt.core.settings import settings
 from docsgpt.mcp_server import mcp
+from docsgpt.security.headers import apply_security_headers
 from docsgpt.ui import StaticUI
 
 _WSGI_THREADPOOL = int(settings.WSGI_THREADPOOL_WORKERS)
@@ -55,6 +57,26 @@ class CorsOriginRestrictionMiddleware:
         await self.app(scope, receive, send)
 
 
+class SecurityHeadersMiddleware:
+    """Apply security headers to every HTTP response in the ASGI shell."""
+
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message):
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                apply_security_headers(headers, is_https=scope.get("scheme") == "https")
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
+
 _CORS_ALLOWED_ORIGINS = cors_allowed_origins(
     settings.CORS_ALLOWED_ORIGINS,
     settings.AUTH_TYPE,
@@ -81,6 +103,7 @@ asgi_app = Starlette(
         Mount("/", app=_backend),
     ],
     middleware=[
+        Middleware(SecurityHeadersMiddleware),
         Middleware(
             CorsOriginRestrictionMiddleware,
             allowed_origins=_CORS_ALLOWED_ORIGINS,

@@ -38,6 +38,22 @@ class TestHealthRoute:
         data = json.loads(response.data)
         assert data["status"] == "ok"
 
+    @pytest.mark.unit
+    def test_security_headers_are_present_without_enabling_hsts_over_http(self, client):
+        response = client.get("/api/health")
+
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert response.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["Permissions-Policy"] == "camera=(), geolocation=(), microphone=(self)"
+        assert "frame-ancestors 'self'" in response.headers["Content-Security-Policy"]
+        assert "Strict-Transport-Security" not in response.headers
+
+    @pytest.mark.unit
+    def test_hsts_is_added_only_for_https_requests(self, client):
+        response = client.get("/api/health", base_url="https://localhost")
+
+        assert response.headers["Strict-Transport-Security"] == "max-age=31536000; includeSubDomains"
+
 
 class TestConfigRoute:
 

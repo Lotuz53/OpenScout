@@ -22,6 +22,7 @@ from starlette.responses import FileResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from docsgpt.core.paths import package_dir
+from docsgpt.security.headers import apply_security_headers
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ class StaticUI:
             path = path[len(root):] or "/"
         if path == "/config.js":
             response = Response(config_js(), media_type="application/javascript", headers={"Cache-Control": "no-store"})
+            apply_security_headers(response.headers, is_https=scope.get("scheme") == "https")
             await response(scope, receive, send)
             return
         first = path.split("/")[1] if len(path) > 1 else ""
@@ -105,4 +107,5 @@ class StaticUI:
         else:
             cache = _IMMUTABLE if first == "assets" else _NO_CACHE
         response = FileResponse(file, media_type=_MEDIA_TYPES.get(file.suffix), headers={"Cache-Control": cache})
+        apply_security_headers(response.headers, is_https=scope.get("scheme") == "https")
         await response(scope, receive, send)

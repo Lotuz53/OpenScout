@@ -40,6 +40,7 @@ from docsgpt.api.v1 import v1_bp  # noqa: E402
 from docsgpt.celery_init import celery  # noqa: E402
 from docsgpt.core.secret_key import resolve_jwt_secret_key  # noqa: E402
 from docsgpt.core.settings import settings  # noqa: E402
+from docsgpt.security.headers import apply_security_headers  # noqa: E402
 from docsgpt.storage.db.bootstrap import (  # noqa: E402
     ensure_database_ready,
     ensure_vector_schema,
@@ -493,7 +494,8 @@ def _bind_user_id_to_log_context():
 
 @app.after_request
 def after_request(response: Response) -> Response:
-    """Add CORS headers only for an explicitly allowed origin."""
+    """Add security and CORS headers without overriding route-specific values."""
+    apply_security_headers(response.headers, is_https=request.is_secure)
     origin = request.headers.get("Origin")
     # Starlette's outer CORSMiddleware owns headers when this WSGI app is
     # mounted under ASGI; adding them here would duplicate Vary/Origin.

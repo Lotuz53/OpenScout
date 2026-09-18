@@ -54,6 +54,15 @@ class TestRouting:
         assert "ui" in response.text and "backend home" not in response.text
         assert response.headers["cache-control"] == "no-cache"
 
+    def test_ui_responses_include_security_headers(self, client):
+        response = client.get("/")
+
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+        assert response.headers["permissions-policy"] == "camera=(), geolocation=(), microphone=(self)"
+        assert "frame-ancestors 'self'" in response.headers["content-security-policy"]
+        assert "strict-transport-security" not in response.headers
+
     def test_client_side_routes_render_index(self, client):
         assert client.get("/agents/123/edit").text == client.get("/").text
 
@@ -88,6 +97,7 @@ class TestConfigJs:
         response = client.get("/config.js")
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
         assert '"VITE_API_HOST":window.location.origin' in response.text
         assert '"VITE_BASE_URL":window.location.origin' in response.text
 
