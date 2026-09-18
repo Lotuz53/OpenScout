@@ -123,11 +123,16 @@ function SharedReportContent({ report }: { report: SharedReport }) {
               </p>
               {report.coverage.repositories.length > 0 && (
                 <ul className="mt-4 space-y-2 border-t border-dashed border-black/10 pt-4 text-xs text-[#697267] dark:border-white/10 dark:text-[#aeb8ac]">
-                  {report.coverage.repositories.map((repository) => (
-                    <li key={repository} className="font-mono">
-                      {repository}
-                    </li>
-                  ))}
+                  {report.coverage.repositories.map(
+                    (repository, repositoryIndex) => (
+                      <li
+                        key={`${repository}-${repositoryIndex}`}
+                        className="font-mono"
+                      >
+                        {repository}
+                      </li>
+                    ),
+                  )}
                 </ul>
               )}
               {report.coverage.capped && (

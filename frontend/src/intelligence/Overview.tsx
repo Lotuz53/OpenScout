@@ -412,9 +412,9 @@ export default function IntelligenceOverview() {
               </p>
             ) : (
               <ul className="mt-5 divide-y divide-black/10 dark:divide-white/10">
-                {projects.map((project) => (
+                {projects.map((project, projectIndex) => (
                   <li
-                    key={project.id}
+                    key={`${project.id}-${projectIndex}`}
                     className="flex flex-col gap-3 py-4 first:pt-0 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="min-w-0">
@@ -474,9 +474,9 @@ export default function IntelligenceOverview() {
             </div>
             {topics.length > 0 ? (
               <ul className="mt-5">
-                {topics.map((topic) => (
+                {topics.map((topic, topicIndex) => (
                   <TopicSignal
-                    key={`${topic.cluster_id}-${topic.month}`}
+                    key={`${topic.cluster_id}-${topic.repository}-${topic.month}-${topicIndex}`}
                     topic={topic}
                   />
                 ))}

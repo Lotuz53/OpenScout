@@ -284,13 +284,13 @@ export default function ReportView({
               </div>
 
               <div className="mt-3 space-y-2 text-sm leading-6 text-[#566057] dark:text-[#c5cdc2]">
-                {content.paragraphs.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                {content.paragraphs.map((paragraph, paragraphIndex) => (
+                  <p key={`${paragraph}-${paragraphIndex}`}>{paragraph}</p>
                 ))}
                 {content.bullets.length > 0 && (
                   <ul className="list-inside list-disc space-y-1">
-                    {content.bullets.map((bullet) => (
-                      <li key={bullet}>{bullet}</li>
+                    {content.bullets.map((bullet, bulletIndex) => (
+                      <li key={`${bullet}-${bulletIndex}`}>{bullet}</li>
                     ))}
                   </ul>
                 )}
@@ -303,8 +303,11 @@ export default function ReportView({
 
               {heading === '完整来源' && report.sources.length > 0 && (
                 <ul className="mt-4 space-y-2">
-                  {report.sources.map((source) => (
-                    <ReportSourceRow key={source.id} source={source} />
+                  {report.sources.map((source, sourceIndex) => (
+                    <ReportSourceRow
+                      key={`${source.id}-${sourceIndex}`}
+                      source={source}
+                    />
                   ))}
                 </ul>
               )}

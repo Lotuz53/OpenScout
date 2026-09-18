@@ -369,14 +369,14 @@ export default function Workbench() {
                 仓库
               </legend>
               <div className="mt-3 space-y-2">
-                {projects.map((project) => {
+                {projects.map((project, projectIndex) => {
                   const label = repositoryLabel(project.repository);
                   const checked = filters.repositories.includes(
                     project.repository,
                   );
                   return (
                     <label
-                      key={project.id}
+                      key={`${project.id}-${projectIndex}`}
                       className="group flex cursor-pointer items-center gap-3 rounded-xl border border-transparent px-2 py-2 transition-colors hover:border-black/10 hover:bg-black/[0.03] dark:hover:border-white/10 dark:hover:bg-white/[0.04]"
                     >
                       <span className="relative flex size-4 shrink-0 items-center justify-center">
@@ -550,27 +550,29 @@ export default function Workbench() {
                 </span>
               </div>
               <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                {RECOMMENDED_QUESTIONS.map((recommendation) => (
-                  <button
-                    key={recommendation.question}
-                    type="button"
-                    onClick={() => {
-                      setQuestionType(recommendation.intent);
-                      dispatch(setQuestion(recommendation.question));
-                    }}
-                    className="group flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-white/60 px-4 py-3 text-left text-sm transition-colors hover:border-emerald-600/50 hover:bg-emerald-50/70 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-emerald-950/20"
-                  >
-                    <span>
-                      <span className="text-muted-foreground mb-1 block font-mono text-[10px] tracking-[0.12em] uppercase">
-                        {recommendation.label}
+                {RECOMMENDED_QUESTIONS.map(
+                  (recommendation, recommendationIndex) => (
+                    <button
+                      key={`${recommendation.question}-${recommendationIndex}`}
+                      type="button"
+                      onClick={() => {
+                        setQuestionType(recommendation.intent);
+                        dispatch(setQuestion(recommendation.question));
+                      }}
+                      className="group flex items-center justify-between gap-3 rounded-xl border border-black/10 bg-white/60 px-4 py-3 text-left text-sm transition-colors hover:border-emerald-600/50 hover:bg-emerald-50/70 dark:border-white/10 dark:bg-white/[0.035] dark:hover:bg-emerald-950/20"
+                    >
+                      <span>
+                        <span className="text-muted-foreground mb-1 block font-mono text-[10px] tracking-[0.12em] uppercase">
+                          {recommendation.label}
+                        </span>
+                        <span className="text-foreground leading-5">
+                          {recommendation.question}
+                        </span>
                       </span>
-                      <span className="text-foreground leading-5">
-                        {recommendation.question}
-                      </span>
-                    </span>
-                    <ArrowLeft className="text-muted-foreground size-4 rotate-180 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
-                  </button>
-                ))}
+                      <ArrowLeft className="text-muted-foreground size-4 rotate-180 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-700" />
+                    </button>
+                  ),
+                )}
               </div>
             </section>
 
@@ -732,9 +734,9 @@ export default function Workbench() {
                     </div>
                     {analysisClaims.length ? (
                       <div className="mt-4 space-y-3">
-                        {analysisClaims.map((claim) => (
+                        {analysisClaims.map((claim, claimIndex) => (
                           <ClaimCard
-                            key={claim.id}
+                            key={`${claim.id}-${claimIndex}`}
                             claim={claim}
                             evidence={queryResult.evidence}
                           />
@@ -766,9 +768,9 @@ export default function Workbench() {
                     </div>
                     {statisticClaims.length ? (
                       <div className="mt-4 space-y-3">
-                        {statisticClaims.map((claim) => (
+                        {statisticClaims.map((claim, claimIndex) => (
                           <ClaimCard
-                            key={claim.id}
+                            key={`${claim.id}-${claimIndex}`}
                             claim={claim}
                             evidence={queryResult.evidence}
                           />

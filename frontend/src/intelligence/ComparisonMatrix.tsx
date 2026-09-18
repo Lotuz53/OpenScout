@@ -168,9 +168,9 @@ export default function ComparisonMatrix({
               <th className="w-44 px-4 py-3 font-mono text-[10px] tracking-[0.12em] text-[#697267] uppercase dark:text-[#aeb8ac]">
                 功能维度
               </th>
-              {repositories.map((repository) => (
+              {repositories.map((repository, repositoryIndex) => (
                 <th
-                  key={repository}
+                  key={`${repository}-${repositoryIndex}`}
                   className="px-4 py-3 font-mono text-[10px] tracking-[0.08em] text-[#697267] uppercase dark:text-[#aeb8ac]"
                 >
                   {repository}
@@ -179,16 +179,19 @@ export default function ComparisonMatrix({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {rows.map((row, rowIndex) => (
               <tr
-                key={row.dimension}
+                key={`${row.dimension}-${rowIndex}`}
                 className="border-t border-black/10 align-top dark:border-white/10"
               >
                 <th className="px-4 py-4 text-sm font-semibold text-[#20241f] dark:text-[#f2f3e9]">
                   {dimensionLabel(row.dimension)}
                 </th>
-                {repositories.map((repository) => (
-                  <td key={repository} className="px-4 py-4">
+                {repositories.map((repository, repositoryIndex) => (
+                  <td
+                    key={`${repository}-${repositoryIndex}`}
+                    className="px-4 py-4"
+                  >
                     <ComparisonCellView
                       cell={row.cells[repository] ?? unknownCell()}
                       evidence={evidence}

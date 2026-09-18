@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { render } from '@testing-library/react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import ReportView from './ReportView';
@@ -62,5 +63,51 @@ describe('report view', () => {
     expect(activeMarkup).toContain('/reports/shared/share-token');
     expect(activeMarkup).toContain('复制链接');
     expect(activeMarkup).toContain('撤销链接');
+  });
+
+  it('does not emit duplicate-key warnings for repeated report content', () => {
+    const duplicateReport = {
+      ...report,
+      sections: [
+        {
+          heading: '执行摘要',
+          paragraphs: ['重复段落', '重复段落'],
+          bullets: ['重复条目', '重复条目'],
+        },
+        ...report.sections,
+      ],
+      sources: [
+        {
+          id: 'source-1',
+          title: '重复来源',
+          url: 'https://example.com/one',
+          repository: 'owner/repo',
+          source_type: 'issue',
+          excerpt: '',
+        },
+        {
+          id: 'source-1',
+          title: '重复来源',
+          url: 'https://example.com/two',
+          repository: 'owner/repo',
+          source_type: 'issue',
+          excerpt: '',
+        },
+      ],
+    };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const rendered = render(<ReportView report={duplicateReport} />);
+    const errorCalls = [...errorSpy.mock.calls];
+    rendered.unmount();
+    errorSpy.mockRestore();
+
+    const duplicateKeyWarnings = errorCalls.filter((call) =>
+      call.some((message) => {
+        const text = String(message);
+        return text.includes('unique "key"') || text.includes('same key');
+      }),
+    );
+    expect(duplicateKeyWarnings).toHaveLength(0);
   });
 });

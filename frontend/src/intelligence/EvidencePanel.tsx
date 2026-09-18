@@ -102,8 +102,11 @@ export default function EvidencePanel({
 
       {sources.length ? (
         <div className="mt-3 space-y-3">
-          {sources.map((source) => (
-            <EvidenceSourceCard key={source.id} source={source} />
+          {sources.map((source, sourceIndex) => (
+            <EvidenceSourceCard
+              key={`${source.id}-${sourceIndex}`}
+              source={source}
+            />
           ))}
         </div>
       ) : (
@@ -116,8 +119,8 @@ export default function EvidencePanel({
         <div className="mt-3 rounded-lg border border-dashed border-black/10 px-3 py-3 text-xs leading-5 text-[#697267] dark:border-white/10 dark:text-[#aeb8ac]">
           <p>以下证据仅返回了稳定标识，详情暂未随响应返回：</p>
           <ul className="mt-1 space-y-1 font-mono">
-            {missingEvidenceIds.map((evidenceId) => (
-              <li key={evidenceId}>· {evidenceId}</li>
+            {missingEvidenceIds.map((evidenceId, evidenceIndex) => (
+              <li key={`${evidenceId}-${evidenceIndex}`}>· {evidenceId}</li>
             ))}
           </ul>
         </div>

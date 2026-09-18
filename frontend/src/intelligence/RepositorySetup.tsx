@@ -347,9 +347,9 @@ export default function RepositorySetup() {
                     该仓库已归档，数据可能不会继续更新。
                   </p>
                 ) : null}
-                {preflight.warnings.map((warning) => (
+                {preflight.warnings.map((warning, warningIndex) => (
                   <div
-                    key={warning}
+                    key={`${warning}-${warningIndex}`}
                     className="flex items-start gap-3 rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100"
                   >
                     <CircleAlert className="mt-0.5 size-4 shrink-0" />
