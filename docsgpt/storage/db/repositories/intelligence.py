@@ -48,6 +48,7 @@ _ORDER_SQL = {
     "value_desc": "value DESC, dimension ASC",
     "period_asc": "dimension ASC, value DESC",
 }
+_STALE_SYNC_FAILURE_MESSAGE = "Worker exited before completing the sync."
 
 
 @dataclass(frozen=True)
@@ -287,7 +288,7 @@ class IntelligenceRepository:
                     "source_type": "sync",
                     "category": "local",
                     "retryable": True,
-                    "message": "Previous synchronization attempt expired before completion.",
+                    "message": _STALE_SYNC_FAILURE_MESSAGE,
                 }
             ],
             ensure_ascii=False,
@@ -298,10 +299,11 @@ class IntelligenceRepository:
                 UPDATE intelligence_sync_runs
                 SET status = 'failed',
                     failures = CAST(:failures AS jsonb),
-                    finished_at = now()
+                    finished_at = now(),
+                    last_heartbeat_at = now()
                 WHERE project_id = CAST(:project_id AS uuid)
                   AND status IN ('queued', 'running')
-                  AND COALESCE(started_at, created_at)
+                  AND COALESCE(last_heartbeat_at, started_at, created_at)
                       < now() - (:stale_after_seconds * interval '1 second')
                 """
             ),
@@ -341,8 +343,13 @@ class IntelligenceRepository:
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO intelligence_sync_runs (project_id, status, started_at)
-                VALUES (CAST(:project_id AS uuid), 'running', now())
+                INSERT INTO intelligence_sync_runs (
+                    project_id,
+                    status,
+                    started_at,
+                    last_heartbeat_at
+                )
+                VALUES (CAST(:project_id AS uuid), 'running', now(), now())
                 RETURNING *
                 """
             ),
@@ -375,13 +382,88 @@ class IntelligenceRepository:
                 UPDATE intelligence_sync_runs
                 SET status = 'failed',
                     failures = CAST(:failures AS jsonb),
-                    finished_at = now()
+                    finished_at = now(),
+                    last_heartbeat_at = now()
                 WHERE id = CAST(:run_id AS uuid)
                   AND status IN ('queued', 'running')
                 """
             ),
             {"run_id": run_id, "failures": failures},
         )
+
+    def heartbeat_sync_run(self, run_id: str) -> bool:
+        """Refresh the liveness timestamp for one running synchronization."""
+        result = self._conn.execute(
+            text(
+                """
+                UPDATE intelligence_sync_runs
+                SET last_heartbeat_at = now()
+                WHERE id = CAST(:run_id AS uuid)
+                  AND status = 'running'
+                RETURNING id
+                """
+            ),
+            {"run_id": run_id},
+        )
+        return result.fetchone() is not None
+
+    def reap_stale_sync_runs(self, stale_after_seconds: int = 3600) -> list[dict[str, str]]:
+        """Fail stale runs once and return their project identifiers.
+
+        Row locking with `SKIP LOCKED` lets multiple reconciliation workers
+        run safely without taking ownership of a live task or updating the
+        same stale run twice.
+        """
+        stale_after_seconds = max(1, int(stale_after_seconds))
+        failures = json.dumps(
+            [
+                {
+                    "source_type": "sync",
+                    "category": "local",
+                    "retryable": True,
+                    "message": _STALE_SYNC_FAILURE_MESSAGE,
+                }
+            ],
+            ensure_ascii=False,
+        )
+        result = self._conn.execute(
+            text(
+                """
+                WITH stale AS (
+                    SELECT id
+                    FROM intelligence_sync_runs
+                    WHERE status IN ('queued', 'running')
+                      AND COALESCE(last_heartbeat_at, started_at, created_at)
+                          < now() - (:stale_after_seconds * interval '1 second')
+                    FOR UPDATE SKIP LOCKED
+                ),
+                updated AS (
+                    UPDATE intelligence_sync_runs AS runs
+                    SET status = 'failed',
+                        failures = CAST(:failures AS jsonb),
+                        finished_at = now(),
+                        last_heartbeat_at = now()
+                    FROM stale
+                    WHERE runs.id = stale.id
+                    RETURNING runs.id::text AS id, runs.project_id::text AS project_id
+                )
+                SELECT id, project_id
+                FROM updated
+                ORDER BY id
+                """
+            ),
+            {
+                "stale_after_seconds": stale_after_seconds,
+                "failures": failures,
+            },
+        )
+        return [
+            {
+                "id": str(row._mapping["id"]),
+                "project_id": str(row._mapping["project_id"]),
+            }
+            for row in result.fetchall()
+        ]
 
     def overview(self, user_id: str) -> dict[str, Any]:
         """Return owner-scoped record counts and synchronization coverage."""
@@ -1169,8 +1251,13 @@ class IntelligenceRepository:
         result = self._conn.execute(
             text(
                 """
-                INSERT INTO intelligence_sync_runs (project_id, status, started_at)
-                VALUES (CAST(:project_id AS uuid), 'running', now())
+                INSERT INTO intelligence_sync_runs (
+                    project_id,
+                    status,
+                    started_at,
+                    last_heartbeat_at
+                )
+                VALUES (CAST(:project_id AS uuid), 'running', now(), now())
                 RETURNING *
                 """
             ),
@@ -1197,7 +1284,8 @@ class IntelligenceRepository:
                     counts = CAST(:counts AS jsonb),
                     failures = CAST(:failures AS jsonb),
                     coverage = CAST(:coverage AS jsonb),
-                    finished_at = now()
+                    finished_at = now(),
+                    last_heartbeat_at = now()
                 WHERE id = CAST(:run_id AS uuid)
                 RETURNING *
                 """

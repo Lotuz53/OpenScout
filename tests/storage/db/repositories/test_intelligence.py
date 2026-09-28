@@ -230,6 +230,94 @@ def test_sync_run_persists_local_failure_summary(pg_conn, project) -> None:
     assert finished["failures"][0]["category"] == "local"
 
 
+def test_sync_run_heartbeat_refreshes_liveness(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    run = repo.start_sync_run(str(project["id"]))
+    run_id = str(run["id"])
+    pg_conn.execute(
+        text(
+            "UPDATE intelligence_sync_runs "
+            "SET last_heartbeat_at = now() - interval '1 hour' "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": run_id},
+    )
+    before = pg_conn.execute(
+        text(
+            "SELECT last_heartbeat_at FROM intelligence_sync_runs "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": run_id},
+    ).scalar()
+
+    assert repo.heartbeat_sync_run(run_id) is True
+
+    after = pg_conn.execute(
+        text(
+            "SELECT last_heartbeat_at FROM intelligence_sync_runs "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": run_id},
+    ).scalar()
+    assert after > before
+
+
+def test_reap_stale_sync_run_records_worker_exit_and_allows_retry(
+    pg_conn,
+    project,
+) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    stale = repo.start_sync_run(project_id)
+    stale_id = str(stale["id"])
+    pg_conn.execute(
+        text(
+            "UPDATE intelligence_sync_runs "
+            "SET started_at = now() - interval '1 hour', "
+            "    last_heartbeat_at = now() - interval '1 hour' "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": stale_id},
+    )
+
+    reaped = repo.reap_stale_sync_runs(stale_after_seconds=60)
+
+    assert reaped == [{"id": stale_id, "project_id": project_id}]
+    failed = repo.get_sync_run(stale_id, "owner")
+    assert failed["status"] == "failed"
+    assert failed["finished_at"] is not None
+    assert failed["failures"][0]["message"] == "Worker exited before completing the sync."
+
+    replacement = repo.claim_project_sync(project_id, "owner", stale_after_seconds=60)
+    assert replacement is not None
+    assert str(replacement["id"]) != stale_id
+
+
+def test_reap_does_not_take_a_fresh_running_sync(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    run = repo.start_sync_run(str(project["id"]))
+
+    assert repo.reap_stale_sync_runs(stale_after_seconds=60) == []
+    assert repo.get_sync_run(str(run["id"]), "owner")["status"] == "running"
+
+
+def test_claim_uses_recent_heartbeat_over_old_start_time(pg_conn, project) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    project_id = str(project["id"])
+    run = repo.start_sync_run(project_id)
+    pg_conn.execute(
+        text(
+            "UPDATE intelligence_sync_runs "
+            "SET started_at = now() - interval '1 hour' "
+            "WHERE id = CAST(:run_id AS uuid)"
+        ),
+        {"run_id": str(run["id"])},
+    )
+
+    assert repo.claim_project_sync(project_id, "owner", stale_after_seconds=60) is None
+    assert repo.get_sync_run(str(run["id"]), "owner")["status"] == "running"
+
+
 def test_claim_project_sync_creates_one_running_attempt(pg_conn, project) -> None:
     repo = IntelligenceRepository(pg_conn)
     project_id = str(project["id"])
@@ -327,7 +415,8 @@ def test_claim_project_sync_reaps_an_expired_attempt(pg_conn, project) -> None:
     pg_conn.execute(
         text(
             "UPDATE intelligence_sync_runs "
-            "SET started_at = now() - interval '1 hour' "
+            "SET started_at = now() - interval '1 hour', "
+            "    last_heartbeat_at = now() - interval '1 hour' "
             "WHERE id = CAST(:run_id AS uuid)"
         ),
         {"run_id": str(stale["id"])},
