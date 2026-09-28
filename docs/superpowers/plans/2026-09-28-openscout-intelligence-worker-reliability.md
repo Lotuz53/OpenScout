@@ -31,7 +31,7 @@
 
 ---
 
-## Task 1: Make worker-local embeddings explicit
+## Task 1: Make worker-local embeddings explicit ✅
 
 **Files:**
 
@@ -280,7 +280,7 @@ Final report must include root cause evidence (including worker exit status if r
 
 ## Completion Checklist
 
-- [ ] Task 1 complete and pushed.
+- [x] Task 1 complete and pushed.
 - [ ] Task 2 complete and pushed.
 - [ ] Task 3 complete and pushed.
 - [ ] Task 4 complete and pushed.

@@ -1,6 +1,8 @@
+from contextlib import contextmanager
+from contextvars import ContextVar
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Iterator, Optional
 
 import requests
 
@@ -11,6 +13,26 @@ from docsgpt.vectorstore.model_registry import (
     max_input_tokens_for,
     resolve,
 )
+
+
+_LOCAL_EMBEDDINGS_ONLY: ContextVar[bool] = ContextVar(
+    "local_embeddings_only", default=False
+)
+
+
+@contextmanager
+def local_embeddings_only() -> Iterator[None]:
+    """Temporarily resolve embeddings in the current process.
+
+    Celery tasks that perform indexing or embedding already run in the process
+    that owns the model. This scope prevents those tasks from dispatching an
+    embedding request back to the same worker and waiting on themselves.
+    """
+    token = _LOCAL_EMBEDDINGS_ONLY.set(True)
+    try:
+        yield
+    finally:
+        _LOCAL_EMBEDDINGS_ONLY.reset(token)
 
 
 def _embeddings_name_is_explicit() -> bool:
@@ -302,7 +324,11 @@ def get_embeddings(
         The shared embeddings instance for the resolved model.
     """
     embeddings_name = embeddings_name or settings.EMBEDDINGS_NAME
-    if not settings.EMBEDDINGS_BASE_URL and _delegation_enabled():
+    if (
+        not settings.EMBEDDINGS_BASE_URL
+        and _delegation_enabled()
+        and not _LOCAL_EMBEDDINGS_ONLY.get()
+    ):
         cache_key = f"delegated_{embeddings_name}"
         if cache_key not in EmbeddingsSingleton._instances:
             from docsgpt.vectorstore.embeddings_delegated import DelegatedEmbeddings

@@ -8,6 +8,7 @@ from docsgpt.vectorstore.base import (
     RemoteEmbeddings,
     get_embeddings,
 )
+from docsgpt.vectorstore import base
 
 HF_MPNET = "huggingface_sentence-transformers/all-mpnet-base-v2"
 LOCAL_MPNET = "/app/models/all-mpnet-base-v2"
@@ -660,3 +661,17 @@ class TestGetEmbeddingsResolver:
 
         assert result is sentinel
         mock_resolver.assert_called_once_with("a-name", "a-key")
+
+
+def test_local_embeddings_only_bypasses_worker_delegation():
+    EmbeddingsSingleton._instances = {}
+    local = Mock()
+
+    with patch.object(base.settings, "EMBEDDINGS_BASE_URL", None):
+        with patch.object(base.settings, "EMBEDDINGS_DELEGATE_TO_WORKER", True):
+            with patch.object(base, "build_local_embeddings", return_value=local) as build:
+                with base.local_embeddings_only():
+                    result = base.get_embeddings("some/model")
+
+    assert result is local
+    build.assert_called_once_with("some/model", None)

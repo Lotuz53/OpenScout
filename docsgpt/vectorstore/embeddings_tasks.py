@@ -24,6 +24,7 @@ def embed_texts(texts: List[str], embeddings_name: Optional[str] = None) -> List
     Returns:
         One vector per input, in input order.
     """
-    from docsgpt.vectorstore.base import get_embeddings
+    from docsgpt.vectorstore.base import get_embeddings, local_embeddings_only
 
-    return get_embeddings(embeddings_name).embed_documents(list(texts))
+    with local_embeddings_only():
+        return get_embeddings(embeddings_name).embed_documents(list(texts))
