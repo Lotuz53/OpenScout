@@ -69,6 +69,47 @@ def test_sync_task_passes_server_attempt_to_service(monkeypatch) -> None:
     service.run.assert_called_once_with("project-1", "u1", sync_run_id="run-1")
 
 
+@pytest.mark.parametrize("sync_run_id", [None, "run-1"])
+def test_sync_task_runs_service_inside_local_embedding_scope(
+    monkeypatch, sync_run_id
+) -> None:
+    active = False
+
+    @contextmanager
+    def local_scope():
+        nonlocal active
+        active = True
+        try:
+            yield
+        finally:
+            active = False
+
+    service = MagicMock()
+    service.run.side_effect = lambda *args, **kwargs: (
+        SyncSummary(
+            status="complete",
+            counts={source_type: 0 for source_type in SourceType},
+            coverage=Coverage(
+                repositories=["owner/repo"],
+                date_from=date(2025, 9, 14),
+                date_to=date(2026, 9, 14),
+                counts={source_type: 0 for source_type in SourceType},
+            ),
+        )
+        if active
+        else pytest.fail("sync service ran outside the local embedding scope")
+    )
+    monkeypatch.setattr(tasks, "build_sync_service", lambda: service)
+    monkeypatch.setattr(tasks, "local_embeddings_only", local_scope)
+
+    task_body = tasks.sync_intelligence_project.run.__wrapped__.__wrapped__
+    kwargs = {"project_id": "project-1", "user_id": "u1"}
+    if sync_run_id is not None:
+        kwargs["sync_run_id"] = sync_run_id
+
+    task_body(tasks.sync_intelligence_project, **kwargs)
+
+
 def test_sync_task_marks_claimed_attempt_failed_before_reraising(monkeypatch) -> None:
     service = MagicMock()
     service.run.side_effect = RuntimeError("index persistence failed")

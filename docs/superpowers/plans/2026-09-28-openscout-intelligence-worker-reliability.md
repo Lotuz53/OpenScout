@@ -69,7 +69,7 @@ Commit message: `fix(embeddings): force local execution inside worker`
 
 ---
 
-## Task 2: Keep sync embedding in-process and add stage diagnostics
+## Task 2: Keep sync embedding in-process and add stage diagnostics ✅
 
 **Files:**
 
@@ -281,7 +281,7 @@ Final report must include root cause evidence (including worker exit status if r
 ## Completion Checklist
 
 - [x] Task 1 complete and pushed.
-- [ ] Task 2 complete and pushed.
+- [x] Task 2 complete and pushed.
 - [ ] Task 3 complete and pushed.
 - [ ] Task 4 complete and pushed.
 - [ ] Task 5 complete and pushed.

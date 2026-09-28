@@ -1,4 +1,5 @@
 from datetime import date, datetime, timezone
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -148,3 +149,53 @@ def test_sync_enqueues_graph_after_indexing_selected_chunks() -> None:
     assert args[:2] == (PROJECT_ID, "u1")
     assert args[2][0]["doc_id"] == "chunk-1"
     assert kwargs["config"]["kind"] == "graphrag"
+
+
+def test_sync_logs_safe_stage_progress(caplog) -> None:
+    repository = MagicMock(spec=["upsert_records"])
+    repository.upsert_records.return_value = [SimpleNamespace(changed=True)]
+    indexer = MagicMock()
+    indexer.replace_records.return_value = SimpleNamespace(
+        chunk_ids=["chunk-1"],
+        embedded_chunks=1,
+    )
+    record = IntelligenceRecord(
+        id="release:1",
+        repository="owner/repo",
+        source_type=SourceType.RELEASE,
+        external_id="v1.0.0",
+        title="Release 1.0.0",
+        body="Do not log this body.",
+        source_url="https://github.com/owner/repo/releases/tag/v1.0.0",
+        published_at=datetime(2026, 1, 10, tzinfo=timezone.utc),
+        retrieved_at=RETRIEVED_AT,
+        content_hash="release-hash",
+    )
+    service = SyncService(repository=repository, github=MagicMock(), indexer=indexer)
+    counts = {source_type: 0 for source_type in SourceType}
+    failures = []
+    observed_dates = []
+
+    with caplog.at_level(logging.INFO, logger="docsgpt.intelligence.sync_service"):
+        ok, records, capped, summary = service._run_source(
+            project_id=PROJECT_ID,
+            source_type=SourceType.RELEASE,
+            user_id="u1",
+            producer=lambda: ([record], False),
+            counts=counts,
+            failures=failures,
+            observed_dates=observed_dates,
+            sync_id="run-1",
+        )
+
+    assert ok is True
+    assert records == [record]
+    assert capped is False
+    assert summary.embedded_chunks == 1
+    messages = [entry.getMessage() for entry in caplog.records]
+    assert any("stage=source_fetch_started" in message for message in messages)
+    assert any("stage=source_fetch_complete" in message for message in messages)
+    assert any("stage=index_started" in message for message in messages)
+    assert any("stage=index_complete" in message for message in messages)
+    assert any("stage=source_persist_complete" in message for message in messages)
+    assert all("Do not log this body." not in message for message in messages)

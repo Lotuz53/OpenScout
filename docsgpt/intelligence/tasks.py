@@ -11,6 +11,7 @@ from docsgpt.intelligence.github_client import GitHubClient
 from docsgpt.intelligence.sync_service import RecoverableGitHubError, SyncService
 from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.session import db_readonly, db_session
+from docsgpt.vectorstore.base import local_embeddings_only
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +70,15 @@ def sync_intelligence_project(
     """Synchronize a project and return a JSON-serializable summary."""
     del self
     try:
-        if sync_run_id is None:
-            summary = build_sync_service().run(project_id, user_id)
-        else:
-            summary = build_sync_service().run(
-                project_id,
-                user_id,
-                sync_run_id=sync_run_id,
-            )
+        with local_embeddings_only():
+            if sync_run_id is None:
+                summary = build_sync_service().run(project_id, user_id)
+            else:
+                summary = build_sync_service().run(
+                    project_id,
+                    user_id,
+                    sync_run_id=sync_run_id,
+                )
     except Exception as exc:
         if sync_run_id is not None:
             try:

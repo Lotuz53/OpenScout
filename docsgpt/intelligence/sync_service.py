@@ -200,6 +200,12 @@ class SyncService:
                     )
                 sync_id = run_id
             self._set_project_status(project_id, user_id, "syncing")
+            logger.info(
+                "Intelligence sync started project=%s repository=%s sync_run=%s",
+                project_id,
+                repository_name,
+                sync_id,
+            )
 
             document_collector = getattr(self.github, "iter_documents", None)
             if callable(document_collector):
@@ -407,11 +413,23 @@ class SyncService:
         sync_id: str,
     ) -> tuple[bool, list[IntelligenceRecord], bool, PersistBatchSummary]:
         """Collect, normalize and persist one source batch."""
+        logger.info(
+            "Intelligence sync stage=source_fetch_started project=%s source=%s",
+            project_id,
+            source_type,
+        )
         try:
             records, capped = producer()
         except Exception as exc:
             failures.append(_to_sync_failure(source_type, exc))
             return False, [], False, PersistBatchSummary()
+        logger.info(
+            "Intelligence sync stage=source_fetch_complete project=%s source=%s records=%d capped=%s",
+            project_id,
+            source_type,
+            len(records),
+            capped,
+        )
 
         # One call opens one transaction for the entire source batch. A
         # failure here is a local consistency failure and must not be recast as
@@ -428,6 +446,16 @@ class SyncService:
             for record in records
             for record_date in _record_dates(record)
         )
+        logger.info(
+            "Intelligence sync stage=source_persist_complete project=%s source=%s "
+            "records=%d changed_records=%d unchanged_records=%d embedded_chunks=%d",
+            project_id,
+            source_type,
+            len(records),
+            batch_summary.changed_records,
+            batch_summary.unchanged_records,
+            batch_summary.embedded_chunks,
+        )
         return True, records, capped, batch_summary
 
     def _collect_comments(
@@ -439,6 +467,14 @@ class SyncService:
         """Collect and normalize bounded comments for the issue batch."""
         records: list[IntelligenceRecord] = []
         capped = False
+        issue_count = len(issue_raws)
+        processed_issues = 0
+        comment_count = 0
+        logger.info(
+            "Intelligence sync stage=issue_comments_started project_repository=%s issues=%d",
+            repository_name,
+            issue_count,
+        )
         for issue in issue_raws:
             issue_number = issue.get("number")
             if issue_number is None:
@@ -451,6 +487,8 @@ class SyncService:
                 )
             )
             capped = capped or len(raw_comments) >= COMMENT_LIMIT
+            comment_count += len(raw_comments)
+            processed_issues += 1
             records.extend(
                 normalize_comment(
                     repository_name,
@@ -460,6 +498,19 @@ class SyncService:
                 )
                 for raw in raw_comments
             )
+            if (
+                processed_issues == 1
+                or processed_issues % 100 == 0
+                or processed_issues == issue_count
+            ):
+                logger.info(
+                    "Intelligence sync stage=issue_comments_progress "
+                    "project_repository=%s issues_processed=%d issues_total=%d comments=%d",
+                    repository_name,
+                    processed_issues,
+                    issue_count,
+                    comment_count,
+                )
         return records, capped
 
     def _persist_batch(
@@ -519,7 +570,18 @@ class SyncService:
             if changed_records:
                 indexer = self._get_indexer(project_id, repository)
                 if indexer is not None:
+                    logger.info(
+                        "Intelligence sync stage=index_started project=%s records=%d",
+                        project_id,
+                        len(changed_records),
+                    )
                     index_summary = indexer.replace_records(project_id, changed_records)
+                    logger.info(
+                        "Intelligence sync stage=index_complete project=%s records=%d chunks=%d",
+                        project_id,
+                        len(changed_records),
+                        _embedded_chunk_count(index_summary),
+                    )
                     self._enqueue_graph_extraction(
                         project_id,
                         user_id,
