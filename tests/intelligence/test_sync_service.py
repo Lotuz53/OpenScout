@@ -199,3 +199,36 @@ def test_sync_logs_safe_stage_progress(caplog) -> None:
     assert any("stage=index_complete" in message for message in messages)
     assert any("stage=source_persist_complete" in message for message in messages)
     assert all("Do not log this body." not in message for message in messages)
+
+
+def test_sync_refreshes_run_heartbeat_at_safe_boundaries() -> None:
+    repository = make_repository()
+    repository.heartbeat_sync_run = MagicMock(return_value=True)
+    events: list[tuple[str, str]] = []
+    repository.heartbeat_sync_run.side_effect = lambda run_id: (
+        events.append(("heartbeat", run_id)) or True
+    )
+    repository.finish_sync_run.side_effect = lambda run_id, summary: events.append(
+        ("finish", run_id)
+    )
+    github = MagicMock(spec=["iter_releases", "iter_issues", "iter_comments"])
+    github.iter_releases.return_value = [RAW_RELEASE]
+    github.iter_issues.return_value = []
+    indexer = MagicMock()
+    indexer.replace_records.return_value = SimpleNamespace(
+        chunk_ids=["chunk-1"],
+        embedded_chunks=1,
+    )
+
+    summary = SyncService(
+        repository=repository,
+        github=github,
+        indexer=indexer,
+        graph_enabled=False,
+        now_factory=lambda: RETRIEVED_AT,
+    ).run(PROJECT_ID, "u1")
+
+    assert summary.status == "complete"
+    assert events[-2:] == [("heartbeat", "run-1"), ("finish", "run-1")]
+    assert repository.heartbeat_sync_run.call_count >= 2
+    assert all(call.args == ("run-1",) for call in repository.heartbeat_sync_run.call_args_list)

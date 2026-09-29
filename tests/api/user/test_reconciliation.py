@@ -961,6 +961,115 @@ class TestPostgresUriMissing:
         assert result == {**zero_summary(), "skipped": "POSTGRES_URI not set"}
 
 
+class TestIntelligenceSyncRecovery:
+    @pytest.mark.unit
+    def test_stale_sync_fails_project_and_run_once(self, pg_conn):
+        from datetime import date
+
+        from docsgpt.api.user import reconciliation as recon
+        from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
+
+        project = IntelligenceRepository(pg_conn).create_project(
+            user_id="u-intelligence-recovery",
+            repository="owner/recovery",
+            window_start=date(2025, 1, 1),
+            window_end=date(2026, 1, 1),
+        )
+        project_id = str(project["id"])
+        run = IntelligenceRepository(pg_conn).claim_project_sync(
+            project_id,
+            "u-intelligence-recovery",
+            stale_after_seconds=60,
+        )
+        assert run is not None
+        run_id = str(run["id"])
+        pg_conn.execute(
+            text(
+                "UPDATE intelligence_sync_runs "
+                "SET last_heartbeat_at = now() - interval '2 hours' "
+                "WHERE id = CAST(:run_id AS uuid)"
+            ),
+            {"run_id": run_id},
+        )
+
+        with _route_engine_to(pg_conn):
+            first = recon.run_reconciliation()
+            second = recon.run_reconciliation()
+
+        project_row = pg_conn.execute(
+            text(
+                "SELECT status FROM intelligence_projects "
+                "WHERE id = CAST(:project_id AS uuid)"
+            ),
+            {"project_id": project_id},
+        ).fetchone()
+        run_row = pg_conn.execute(
+            text(
+                "SELECT status, failures FROM intelligence_sync_runs "
+                "WHERE id = CAST(:run_id AS uuid)"
+            ),
+            {"run_id": run_id},
+        ).fetchone()
+
+        assert first["intelligence_syncs_failed"] == 1
+        assert second["intelligence_syncs_failed"] == 0
+        assert project_row[0] == "failed"
+        assert run_row[0] == "failed"
+        assert run_row[1][0]["message"] == "Worker exited before completing the sync."
+
+    @pytest.mark.unit
+    def test_fresh_long_sync_is_not_recovered(self, pg_conn):
+        from datetime import date
+
+        from docsgpt.api.user import reconciliation as recon
+        from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
+
+        project = IntelligenceRepository(pg_conn).create_project(
+            user_id="u-intelligence-live",
+            repository="owner/live",
+            window_start=date(2025, 1, 1),
+            window_end=date(2026, 1, 1),
+        )
+        project_id = str(project["id"])
+        run = IntelligenceRepository(pg_conn).claim_project_sync(
+            project_id,
+            "u-intelligence-live",
+            stale_after_seconds=60,
+        )
+        assert run is not None
+        run_id = str(run["id"])
+        pg_conn.execute(
+            text(
+                "UPDATE intelligence_sync_runs "
+                "SET started_at = now() - interval '2 hours' "
+                "WHERE id = CAST(:run_id AS uuid)"
+            ),
+            {"run_id": run_id},
+        )
+
+        with _route_engine_to(pg_conn):
+            result = recon.run_reconciliation()
+
+        project_row = pg_conn.execute(
+            text(
+                "SELECT status FROM intelligence_projects "
+                "WHERE id = CAST(:project_id AS uuid)"
+            ),
+            {"project_id": project_id},
+        ).fetchone()
+        run_row = pg_conn.execute(
+            text(
+                "SELECT status FROM intelligence_sync_runs "
+                "WHERE id = CAST(:run_id AS uuid)"
+            ),
+            {"run_id": run_id},
+        ).fetchone()
+
+        assert result["intelligence_syncs_failed"] == 0
+        assert project_row[0] == "syncing"
+        assert run_row[0] == "running"
+
+
 # ---------------------------------------------------------------------------
 # Publish-after-commit durability — a sweep that raises must not swallow the
 # events whose DB writes already landed.

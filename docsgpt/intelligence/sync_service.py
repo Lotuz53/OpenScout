@@ -200,6 +200,7 @@ class SyncService:
                     )
                 sync_id = run_id
             self._set_project_status(project_id, user_id, "syncing")
+            self._heartbeat_sync_run(run_id)
             logger.info(
                 "Intelligence sync started project=%s repository=%s sync_run=%s",
                 project_id,
@@ -301,6 +302,7 @@ class SyncService:
                         repository_name,
                         issue_raws,
                         retrieved_at,
+                        sync_run_id=sync_id,
                     ),
                     counts=counts,
                     failures=failures,
@@ -353,6 +355,7 @@ class SyncService:
             )
 
             if run_id is not None:
+                self._heartbeat_sync_run(run_id)
                 self._finish_sync_run(run_id, summary)
             self._set_project_status(
                 project_id,
@@ -388,6 +391,10 @@ class SyncService:
             )
             if run_id is not None:
                 try:
+                    self._heartbeat_sync_run(run_id)
+                except Exception:
+                    logger.exception("Could not refresh sync run %s before failure", run_id)
+                try:
                     self._finish_sync_run(run_id, failed_summary)
                 except Exception:
                     logger.exception("Could not mark sync run %s as failed", run_id)
@@ -418,6 +425,7 @@ class SyncService:
             project_id,
             source_type,
         )
+        self._heartbeat_sync_run(sync_id)
         try:
             records, capped = producer()
         except Exception as exc:
@@ -430,6 +438,7 @@ class SyncService:
             len(records),
             capped,
         )
+        self._heartbeat_sync_run(sync_id)
 
         # One call opens one transaction for the entire source batch. A
         # failure here is a local consistency failure and must not be recast as
@@ -440,6 +449,7 @@ class SyncService:
             user_id=user_id,
             sync_id=sync_id,
         )
+        self._heartbeat_sync_run(sync_id)
         counts[source_type] = len(records)
         observed_dates.extend(
             record_date
@@ -463,6 +473,8 @@ class SyncService:
         repository_name: str,
         issue_raws: Sequence[Mapping[str, Any]],
         retrieved_at: datetime,
+        *,
+        sync_run_id: str | None = None,
     ) -> tuple[list[IntelligenceRecord], bool]:
         """Collect and normalize bounded comments for the issue batch."""
         records: list[IntelligenceRecord] = []
@@ -511,6 +523,7 @@ class SyncService:
                     issue_count,
                     comment_count,
                 )
+                self._heartbeat_sync_run(sync_run_id)
         return records, capped
 
     def _persist_batch(
@@ -805,6 +818,17 @@ class SyncService:
             finisher = getattr(repository, "finish_sync_run", None)
             if callable(finisher):
                 finisher(run_id, summary)
+
+    def _heartbeat_sync_run(self, run_id: str | None) -> None:
+        """Refresh one running sync at a bounded synchronization boundary."""
+        if run_id is None:
+            return
+        with self._repository_context() as repository:
+            heartbeater = getattr(repository, "heartbeat_sync_run", None)
+            if not callable(heartbeater):
+                return
+            if not heartbeater(run_id):
+                logger.warning("Sync run %s was no longer running during heartbeat", run_id)
 
     def _set_project_status(
         self,

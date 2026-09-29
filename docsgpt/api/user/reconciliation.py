@@ -8,11 +8,12 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, Optional, TYPE_CHECKING
 
-from sqlalchemy import Connection, Engine
+from sqlalchemy import Connection, Engine, text
 
 from docsgpt.api.user.idempotency import MAX_TASK_ATTEMPTS
 from docsgpt.core.settings import settings
 from docsgpt.storage.db.engine import get_engine
+from docsgpt.storage.db.repositories.intelligence import IntelligenceRepository
 from docsgpt.storage.db.repositories.pending_tool_state import (
     PendingToolStateRepository,
 )
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 MAX_MESSAGE_RECONCILE_ATTEMPTS = 3
+STALE_INTELLIGENCE_SYNC_FAILURE = "Worker exited before completing the sync."
 
 
 def zero_summary() -> Dict[str, int]:
@@ -42,6 +44,7 @@ def zero_summary() -> Dict[str, int]:
         "ingests_stalled": 0,
         "idempotency_pending_failed": 0,
         "schedule_runs_failed": 0,
+        "intelligence_syncs_failed": 0,
     }
 
 
@@ -292,7 +295,29 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                 },
             )
 
-    # Q6: scheduler runs stuck in 'running' past the soft-time-limit window.
+    # Q6: intelligence syncs whose worker stopped heartbeating. The repository
+    # atomically transitions each stale run before this project-level check;
+    # locking the project row here prevents a concurrent claim from being
+    # overwritten by the recovery status update.
+    with _sweep(engine, events) as (conn, staged):
+        repo = IntelligenceRepository(conn)
+        for run in repo.reap_stale_sync_runs(
+            stale_after_seconds=settings.INTELLIGENCE_SYNC_STALE_SECONDS,
+        ):
+            user_id = _fail_intelligence_project_if_idle(conn, run["project_id"])
+            summary["intelligence_syncs_failed"] += 1
+            _emit_alert(
+                conn,
+                name="reconciler_intelligence_sync_failed",
+                user_id=user_id,
+                detail={
+                    "run_id": run["id"],
+                    "project_id": run["project_id"],
+                    "reason": STALE_INTELLIGENCE_SYNC_FAILURE,
+                },
+            )
+
+    # Q7: scheduler runs stuck in 'running' past the soft-time-limit window.
     from docsgpt.storage.db.repositories.schedule_runs import (
         ScheduleRunsRepository,
     )
@@ -344,7 +369,7 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
                 },
             )
 
-    # Q7: scheduler runs orphaned in 'pending' — dispatcher committed but
+    # Q8: scheduler runs orphaned in 'pending' — dispatcher committed but
     # apply_async failed (broker outage / crash mid-dispatch).
     with _sweep(engine, events) as (conn, staged):
         runs_repo = ScheduleRunsRepository(conn)
@@ -389,6 +414,49 @@ def _run_sweeps(engine: Engine, summary: Dict[str, Any], events: list[tuple]) ->
             )
 
     return summary
+
+
+def _fail_intelligence_project_if_idle(conn: Connection, project_id: str) -> str | None:
+    """Fail a syncing project only when no replacement run is active."""
+    project = conn.execute(
+        text(
+            """
+            SELECT user_id, status
+            FROM intelligence_projects
+            WHERE id = CAST(:project_id AS uuid)
+            FOR UPDATE
+            """
+        ),
+        {"project_id": project_id},
+    ).mappings().first()
+    if project is None:
+        return None
+
+    active_run = conn.execute(
+        text(
+            """
+            SELECT 1
+            FROM intelligence_sync_runs
+            WHERE project_id = CAST(:project_id AS uuid)
+              AND status IN ('queued', 'running')
+            LIMIT 1
+            """
+        ),
+        {"project_id": project_id},
+    ).first()
+    if active_run is None and project["status"] == "syncing":
+        conn.execute(
+            text(
+                """
+                UPDATE intelligence_projects
+                SET status = 'failed'
+                WHERE id = CAST(:project_id AS uuid)
+                  AND status = 'syncing'
+                """
+            ),
+            {"project_id": project_id},
+        )
+    return str(project["user_id"])
 
 
 def _terminal_flip_once_schedule(

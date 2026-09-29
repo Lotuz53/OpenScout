@@ -138,7 +138,7 @@ Commit message: `fix(intelligence): persist sync liveness and reap stale runs`
 
 ---
 
-## Task 4: Integrate heartbeats with reconciliation recovery
+## Task 4: Integrate heartbeats with reconciliation recovery ✅
 
 **Files:**
 
@@ -283,7 +283,7 @@ Final report must include root cause evidence (including worker exit status if r
 - [x] Task 1 complete and pushed.
 - [x] Task 2 complete and pushed.
 - [x] Task 3 complete and pushed.
-- [ ] Task 4 complete and pushed.
+- [x] Task 4 complete and pushed.
 - [ ] Task 5 complete and pushed.
 - [ ] Task 6 complete and pushed or explicitly skipped with profiling evidence.
 - [ ] Task 7 complete and pushed.
