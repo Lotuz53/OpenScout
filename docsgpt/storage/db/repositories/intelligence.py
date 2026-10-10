@@ -59,6 +59,36 @@ class UpsertOutcome:
     changed: bool
 
 
+@dataclass(frozen=True)
+class ProjectCreateResult:
+    """Describe whether a project request created the canonical project."""
+
+    project: dict[str, Any]
+    created: bool
+
+
+def _project_dedupe_key(
+    user_id: str,
+    repository: str,
+    window_start: date,
+    window_end: date,
+) -> str:
+    """Build the stable identity key for one owner-scoped project window."""
+    if repository != repository.strip() or repository.count("/") != 1:
+        raise ValueError("repository must be normalized as owner/name")
+    owner, name = repository.split("/")
+    if not owner or not name:
+        raise ValueError("repository must be normalized as owner/name")
+    return "\x1f".join(
+        (
+            user_id,
+            repository,
+            window_start.isoformat(),
+            window_end.isoformat(),
+        )
+    )
+
+
 class IntelligenceRepository:
     """SQL repository for owner-scoped OpenScout persistence."""
 
@@ -77,7 +107,22 @@ class IntelligenceRepository:
         window_start: date,
         window_end: date,
     ) -> dict[str, Any]:
-        """Create an owner-scoped intelligence project.
+        """Create or return a canonical project row."""
+        return self.create_project_with_result(
+            user_id=user_id,
+            repository=repository,
+            window_start=window_start,
+            window_end=window_end,
+        ).project
+
+    def create_project_with_result(
+        self,
+        user_id: str,
+        repository: str,
+        window_start: date,
+        window_end: date,
+    ) -> ProjectCreateResult:
+        """Create an owner-scoped intelligence project with creation state.
 
         Args:
             user_id: Authenticated owner identifier.
@@ -86,14 +131,35 @@ class IntelligenceRepository:
             window_end: Inclusive data window end.
 
         Returns:
-            The inserted project row.
+            The canonical project row and whether this request inserted it.
         """
+        dedupe_key = _project_dedupe_key(
+            user_id,
+            repository,
+            window_start,
+            window_end,
+        )
         result = self._conn.execute(
             text(
                 """
                 INSERT INTO intelligence_projects
-                    (user_id, repository, window_start, window_end)
-                VALUES (:user_id, :repository, :window_start, :window_end)
+                    (
+                        user_id,
+                        repository,
+                        window_start,
+                        window_end,
+                        project_dedupe_key
+                    )
+                VALUES (
+                    :user_id,
+                    :repository,
+                    :window_start,
+                    :window_end,
+                    :project_dedupe_key
+                )
+                ON CONFLICT (project_dedupe_key)
+                    WHERE project_dedupe_key IS NOT NULL
+                DO NOTHING
                 RETURNING *
                 """
             ),
@@ -102,9 +168,28 @@ class IntelligenceRepository:
                 "repository": repository,
                 "window_start": window_start,
                 "window_end": window_end,
+                "project_dedupe_key": dedupe_key,
             },
         )
-        return row_to_dict(result.fetchone())
+        row = result.fetchone()
+        if row is not None:
+            return ProjectCreateResult(row_to_dict(row), True)
+
+        canonical = self._conn.execute(
+            text(
+                """
+                SELECT *
+                FROM intelligence_projects
+                WHERE project_dedupe_key = :project_dedupe_key
+                ORDER BY created_at ASC, id ASC
+                LIMIT 1
+                """
+            ),
+            {"project_dedupe_key": dedupe_key},
+        ).fetchone()
+        if canonical is None:
+            raise RuntimeError("Could not resolve the canonical intelligence project")
+        return ProjectCreateResult(row_to_dict(canonical), False)
 
 
     def get_project(self, project_id: str, user_id: str) -> dict[str, Any] | None:

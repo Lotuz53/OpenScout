@@ -133,6 +133,78 @@ def test_project_lookup_is_owner_scoped(pg_conn, project) -> None:
     assert repo.get_project(project_id, "other") is None
 
 
+def test_create_project_returns_one_canonical_project_for_equivalent_requests(pg_conn) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    kwargs = {
+        "user_id": "dedupe-owner",
+        "repository": "owner/repo",
+        "window_start": date(2025, 1, 1),
+        "window_end": date(2026, 1, 1),
+    }
+
+    first = repo.create_project_with_result(**kwargs)
+    second = repo.create_project_with_result(**kwargs)
+
+    assert first.created is True
+    assert second.created is False
+    assert first.project["id"] == second.project["id"]
+    assert second.project["project_dedupe_key"] == (
+        "dedupe-owner\x1fowner/repo\x1f2025-01-01\x1f2026-01-01"
+    )
+
+
+def test_create_project_allows_a_different_time_window(pg_conn) -> None:
+    repo = IntelligenceRepository(pg_conn)
+    first = repo.create_project_with_result(
+        user_id="dedupe-window-owner",
+        repository="owner/repo",
+        window_start=date(2025, 1, 1),
+        window_end=date(2026, 1, 1),
+    )
+    second = repo.create_project_with_result(
+        user_id="dedupe-window-owner",
+        repository="owner/repo",
+        window_start=date(2025, 1, 2),
+        window_end=date(2026, 1, 1),
+    )
+
+    assert first.created is True
+    assert second.created is True
+    assert first.project["id"] != second.project["id"]
+
+
+def test_create_project_is_atomic_under_concurrent_equivalent_requests(pg_engine) -> None:
+    barrier = threading.Barrier(2)
+    results = []
+    errors = []
+
+    def create() -> None:
+        try:
+            with pg_engine.begin() as conn:
+                barrier.wait(timeout=10)
+                results.append(
+                    IntelligenceRepository(conn).create_project_with_result(
+                        user_id="dedupe-concurrent-owner",
+                        repository="owner/repo",
+                        window_start=date(2025, 1, 1),
+                        window_end=date(2026, 1, 1),
+                    )
+                )
+        except Exception as exc:  # pragma: no cover - assertion reports the cause
+            errors.append(exc)
+
+    threads = [threading.Thread(target=create) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=15)
+
+    assert errors == []
+    assert len(results) == 2
+    assert sum(result.created for result in results) == 1
+    assert len({str(result.project["id"]) for result in results}) == 1
+
+
 def test_project_status_persists_external_cursor_in_owner_scope(pg_conn, project) -> None:
     repo = IntelligenceRepository(pg_conn)
     project_id = str(project["id"])

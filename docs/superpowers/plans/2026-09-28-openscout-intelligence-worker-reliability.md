@@ -173,7 +173,7 @@ Commit message: `fix(intelligence): recover projects after dead workers`
 
 ---
 
-## Task 5: Deduplicate equivalent Intelligence projects
+## Task 5: Deduplicate equivalent Intelligence projects ✅
 
 **Files:**
 
@@ -284,6 +284,6 @@ Final report must include root cause evidence (including worker exit status if r
 - [x] Task 2 complete and pushed.
 - [x] Task 3 complete and pushed.
 - [x] Task 4 complete and pushed.
-- [ ] Task 5 complete and pushed.
+- [x] Task 5 complete and pushed.
 - [ ] Task 6 complete and pushed or explicitly skipped with profiling evidence.
 - [ ] Task 7 complete and pushed.

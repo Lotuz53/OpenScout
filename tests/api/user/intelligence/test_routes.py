@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -415,13 +416,16 @@ def test_create_project_validates_request_before_db(client, auth_headers, monkey
 def test_create_project_is_owner_scoped(client, auth_headers, monkeypatch) -> None:
     project_id = str(uuid4())
     repository = MagicMock()
-    repository.create_project.return_value = {
-        "id": project_id,
-        "user_id": "user-1",
-        "repository": "langgenius/dify",
-        "window_start": date(2025, 9, 14),
-        "window_end": date(2026, 9, 14),
-    }
+    repository.create_project_with_result.return_value = SimpleNamespace(
+        project={
+            "id": project_id,
+            "user_id": "user-1",
+            "repository": "langgenius/dify",
+            "window_start": date(2025, 9, 14),
+            "window_end": date(2026, 9, 14),
+        },
+        created=True,
+    )
     _patch_repository(monkeypatch, repository)
     preflight_service = MagicMock()
     preflight_service.check.return_value = RepositoryPreflight(repository="langgenius/dify")
@@ -443,12 +447,50 @@ def test_create_project_is_owner_scoped(client, auth_headers, monkeypatch) -> No
     assert response.status_code == 201
     assert response.json["project"]["id"] == project_id
     preflight_service.check.assert_called_once_with("langgenius/dify")
-    repository.create_project.assert_called_once_with(
+    repository.create_project_with_result.assert_called_once_with(
         user_id="user-1",
         repository="langgenius/dify",
         window_start=date(2025, 9, 14),
         window_end=date(2026, 9, 14),
     )
+
+
+def test_create_project_returns_existing_canonical_project_with_ok_status(
+    client, auth_headers, monkeypatch
+) -> None:
+    project_id = str(uuid4())
+    repository = MagicMock()
+    repository.create_project_with_result.return_value = SimpleNamespace(
+        project={
+            "id": project_id,
+            "user_id": "user-1",
+            "repository": "langgenius/dify",
+            "window_start": date(2025, 9, 14),
+            "window_end": date(2026, 9, 14),
+        },
+        created=False,
+    )
+    _patch_repository(monkeypatch, repository)
+    preflight_service = MagicMock()
+    preflight_service.check.return_value = RepositoryPreflight(repository="langgenius/dify")
+    monkeypatch.setattr(
+        "docsgpt.api.user.intelligence.routes.build_preflight_service",
+        lambda: preflight_service,
+    )
+
+    response = client.post(
+        "/api/intelligence/projects",
+        headers=auth_headers,
+        json={
+            "repository": "https://github.com/langgenius/dify.git",
+            "window_start": "2025-09-14",
+            "window_end": "2026-09-14",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json["created"] is False
+    assert response.json["project"]["id"] == project_id
 
 
 def test_create_project_rechecks_preflight_before_db(client, auth_headers, monkeypatch) -> None:

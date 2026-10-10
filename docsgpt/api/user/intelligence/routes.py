@@ -298,13 +298,18 @@ class IntelligenceProjects(Resource):
 
         try:
             with db_session() as conn:
-                row = IntelligenceRepository(conn).create_project(
+                creation = IntelligenceRepository(conn).create_project_with_result(
                     user_id=user_id,
                     repository=repository,
                     window_start=window_start,
                     window_end=window_end,
                 )
-            return _ok({"project": _json_row(row)}, 201)
+            row = getattr(creation, "project", creation)
+            created = bool(getattr(creation, "created", True))
+            return _ok(
+                {"project": _json_row(row), "created": created},
+                201 if created else 200,
+            )
         except Exception:
             logger.exception("Could not create intelligence project")
             return _error("internal error", 500)
