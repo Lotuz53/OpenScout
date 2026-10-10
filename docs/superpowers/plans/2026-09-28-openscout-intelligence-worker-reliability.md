@@ -209,7 +209,7 @@ Commit message: `fix(intelligence): deduplicate equivalent projects`
 
 ---
 
-## Task 6: Prove and, if necessary, add bounded index batching
+## Task 6: Prove and, if necessary, add bounded index batching ✅
 
 **Files:**
 
@@ -285,5 +285,5 @@ Final report must include root cause evidence (including worker exit status if r
 - [x] Task 3 complete and pushed.
 - [x] Task 4 complete and pushed.
 - [x] Task 5 complete and pushed.
-- [ ] Task 6 complete and pushed or explicitly skipped with profiling evidence.
+- [x] Task 6 complete and pushed.
 - [ ] Task 7 complete and pushed.

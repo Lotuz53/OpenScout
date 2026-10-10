@@ -531,6 +531,8 @@ class Settings(BaseSettings):
     WORKFLOW_RUN_STALE_SECONDS: int = 3600
     # OpenScout sync claims are reaped on the next claim after this age.
     INTELLIGENCE_SYNC_STALE_SECONDS: int = Field(default=3600, ge=1)
+    # Chunks per OpenScout vector-store call; caps embedding memory and request size.
+    INTELLIGENCE_INDEX_BATCH_SIZE: int = Field(default=32, ge=1, le=512)
     # Runner container caps, consumed by the docsgpt-sandbox compose service, not the app.
     # These cgroup limits are part of the untrusted-code security boundary.
     SANDBOX_MEMORY: str = "1g"  # docker mem_limit for the runner container

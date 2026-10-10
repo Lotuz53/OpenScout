@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -16,9 +17,12 @@ from docsgpt.vectorstore.model_registry import max_input_tokens_for
 
 DEFAULT_MAX_CHUNK_TOKENS = 384
 APPROXIMATE_TOKEN_CHARS = 4
+DEFAULT_INDEX_BATCH_SIZE = 32
+MAX_INDEX_BATCH_SIZE = 512
 MARKDOWN_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+\S")
 RECURSIVE_SEPARATORS = ("\n\n", "\n", " ")
 _counter_unavailable = False
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -99,6 +103,51 @@ class IntelligenceIndexer:
         deleted_chunks = 0
         embedded_chunks = 0
         chunk_ids: list[str] = []
+        pending: list[tuple[str, dict[str, Any], str, str]] = []
+        batch_number = 0
+        processed_chunks = 0
+        batch_size = _index_batch_size()
+
+        def flush_batch() -> None:
+            """Embed and persist at most one configured batch of chunks."""
+            nonlocal batch_number, embedded_chunks, pending, processed_chunks
+            if not pending:
+                return
+
+            batch = pending
+            pending = []
+            texts = [item[0] for item in batch]
+            metadatas = [item[1] for item in batch]
+            affected_ids = list(dict.fromkeys(item[3] for item in batch))
+            batch_number += 1
+            try:
+                returned_ids = self.vector_store.add_texts(texts, metadatas)
+            except Exception as exc:  # noqa: BLE001 -- attach stable source ids
+                raise RuntimeError(
+                    "Failed to index records "
+                    f"[{', '.join(affected_ids)}]: {exc}"
+                ) from exc
+
+            ids = _normalize_ids(returned_ids)
+            if returned_ids is not None and len(ids) != len(texts):
+                raise RuntimeError(
+                    "Vector store returned "
+                    f"{len(ids)} ids for {len(texts)} chunks in records "
+                    f"[{', '.join(affected_ids)}]"
+                )
+
+            embedded_chunks += len(ids) if returned_ids is not None else len(texts)
+            for chunk_id, item in zip(ids, batch):
+                self._chunk_ids_by_source[item[2]].append(chunk_id)
+            chunk_ids.extend(ids)
+            processed_chunks += len(texts)
+            logger.info(
+                "Intelligence indexing batch project=%s batch=%d chunks=%d processed=%d",
+                project_id,
+                batch_number,
+                len(texts),
+                processed_chunks,
+            )
 
         for record in records:
             record_id = _record_id(record)
@@ -106,17 +155,23 @@ class IntelligenceIndexer:
             deleted_chunks += self._delete_existing(source)
 
             chunks = self._project_chunks(record, project_id, source)
+            self._chunk_ids_by_source[source] = []
             if not chunks:
-                self._chunk_ids_by_source[source] = []
                 continue
 
-            texts = [chunk.page_content for chunk in chunks]
-            metadatas = [chunk.metadata for chunk in chunks]
-            returned_ids = self.vector_store.add_texts(texts, metadatas)
-            ids = _normalize_ids(returned_ids)
-            embedded_chunks += len(ids) if returned_ids is not None else len(texts)
-            chunk_ids.extend(ids)
-            self._chunk_ids_by_source[source] = ids
+            for chunk in chunks:
+                pending.append(
+                    (
+                        chunk.page_content,
+                        chunk.metadata,
+                        source,
+                        record_id,
+                    )
+                )
+                if len(pending) >= batch_size:
+                    flush_batch()
+
+        flush_batch()
 
         return IndexSummary(
             embedded_chunks=embedded_chunks,
@@ -198,6 +253,18 @@ def _max_chunk_tokens() -> int:
         return int(configured)
     registered = max_input_tokens_for(getattr(settings, "EMBEDDINGS_NAME", None))
     return registered or DEFAULT_MAX_CHUNK_TOKENS
+
+
+def _index_batch_size() -> int:
+    """Return the bounded number of chunks sent to one vector-store call."""
+    configured = getattr(settings, "INTELLIGENCE_INDEX_BATCH_SIZE", DEFAULT_INDEX_BATCH_SIZE)
+    if isinstance(configured, bool):
+        return DEFAULT_INDEX_BATCH_SIZE
+    try:
+        configured = int(configured)
+    except (TypeError, ValueError):
+        return DEFAULT_INDEX_BATCH_SIZE
+    return min(max(configured, 1), MAX_INDEX_BATCH_SIZE)
 
 
 def _token_counter() -> Any:

@@ -113,6 +113,124 @@ def test_changed_record_replaces_only_its_chunks() -> None:
     }
 
 
+def test_replace_records_characterizes_per_record_embedding(monkeypatch) -> None:
+    monkeypatch.setattr(
+        indexing,
+        "settings",
+        SimpleNamespace(
+            EMBEDDINGS_MAX_INPUT_TOKENS=None,
+            EMBEDDINGS_NAME="test_model",
+            INTELLIGENCE_INDEX_BATCH_SIZE=2,
+        ),
+    )
+    monkeypatch.setattr(indexing, "_token_counter", indexing._ApproximateTokenCounter)
+    repository = MagicMock()
+    vector_store = MagicMock()
+    vector_store.delete_chunks_by_source_path.return_value = 0
+    calls = []
+
+    def add_texts(texts, metadatas):
+        calls.append((list(texts), list(metadatas)))
+        return [f"chunk-{len(calls)}-{offset}" for offset in range(len(texts))]
+
+    vector_store.add_texts.side_effect = add_texts
+    records = [
+        issue_record(body=f"record-{number}").model_copy(
+            update={"id": f"issue:{number}", "external_id": str(number)}
+        )
+        for number in range(3)
+    ]
+
+    IntelligenceIndexer(repository, vector_store).replace_records(PROJECT_ID, records)
+
+    assert len(calls) == 2
+    assert [call[0] for call in calls] == [
+        ["record-0", "record-1"],
+        ["record-2"],
+    ]
+    assert [[metadata["record_id"] for metadata in call[1]] for call in calls] == [
+        ["issue:0", "issue:1"],
+        ["issue:2"],
+    ]
+
+
+def test_replace_records_splits_one_record_across_batch_boundaries(monkeypatch) -> None:
+    monkeypatch.setattr(
+        indexing,
+        "settings",
+        SimpleNamespace(
+            EMBEDDINGS_MAX_INPUT_TOKENS=None,
+            EMBEDDINGS_NAME="test_model",
+            INTELLIGENCE_INDEX_BATCH_SIZE=2,
+        ),
+    )
+    monkeypatch.setattr(indexing, "_token_counter", indexing._ApproximateTokenCounter)
+    repository = MagicMock()
+    vector_store = MagicMock()
+    vector_store.delete_chunks_by_source_path.return_value = 0
+    calls = []
+
+    def add_texts(texts, metadatas):
+        calls.append((list(texts), list(metadatas)))
+        start = sum(len(previous[0]) for previous in calls[:-1])
+        return [f"chunk-{start + offset}" for offset in range(len(texts))]
+
+    vector_store.add_texts.side_effect = add_texts
+    monkeypatch.setattr(
+        indexing,
+        "chunks_for_record",
+        lambda record: [
+            indexing.Document(
+                page_content=f"piece-{number}",
+                metadata={},
+            )
+            for number in range(5)
+        ],
+    )
+
+    summary = IntelligenceIndexer(repository, vector_store).replace_records(
+        PROJECT_ID,
+        [issue_record()],
+    )
+
+    assert [len(call[0]) for call in calls] == [2, 2, 1]
+    assert all(metadata["record_id"] == "issue:42" for call in calls for metadata in call[1])
+    assert summary.embedded_chunks == 5
+    assert summary.chunk_ids == [
+        "chunk-0",
+        "chunk-1",
+        "chunk-2",
+        "chunk-3",
+        "chunk-4",
+    ]
+
+
+def test_replace_records_reports_stable_ids_when_a_batch_fails(monkeypatch) -> None:
+    monkeypatch.setattr(
+        indexing,
+        "settings",
+        SimpleNamespace(
+            EMBEDDINGS_MAX_INPUT_TOKENS=None,
+            EMBEDDINGS_NAME="test_model",
+            INTELLIGENCE_INDEX_BATCH_SIZE=2,
+        ),
+    )
+    monkeypatch.setattr(indexing, "_token_counter", indexing._ApproximateTokenCounter)
+    repository = MagicMock()
+    vector_store = MagicMock()
+    vector_store.delete_chunks_by_source_path.return_value = 0
+    vector_store.add_texts.side_effect = RuntimeError("embedding unavailable")
+    records = [
+        issue_record(body=f"record-{number}").model_copy(
+            update={"id": f"issue:{number}", "external_id": str(number)}
+        )
+        for number in range(3)
+    ]
+
+    with pytest.raises(RuntimeError, match=r"issue:0.*issue:1.*embedding unavailable"):
+        IntelligenceIndexer(repository, vector_store).replace_records(PROJECT_ID, records)
+
+
 @pytest.fixture
 def real_faiss_store(tmp_path, monkeypatch):
     class Embeddings:
