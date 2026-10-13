@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -17,6 +17,7 @@ from docsgpt.vectorstore.model_registry import max_input_tokens_for
 
 DEFAULT_MAX_CHUNK_TOKENS = 384
 APPROXIMATE_TOKEN_CHARS = 4
+MIN_TOKENIZER_INPUT_CHARS = 2048
 DEFAULT_INDEX_BATCH_SIZE = 32
 MAX_INDEX_BATCH_SIZE = 512
 MARKDOWN_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+\S")
@@ -47,23 +48,36 @@ def chunks_for_record(record: IntelligenceRecord) -> list[Document]:
     Returns:
         Documents containing the record text and traceability metadata.
     """
+    return list(iter_chunks_for_record(record))
+
+
+def iter_chunks_for_record(record: IntelligenceRecord) -> Iterator[Document]:
+    """Yield one record's chunks without materializing the complete record.
+
+    Documentation sections are still discovered as a list because their
+    headings are needed for deterministic section boundaries. Recursive
+    splitting of each section is lazy so one large issue, comment, or release
+    cannot consume memory before the configured embedding batch is flushed.
+
+    Args:
+        record: Normalized evidence record to chunk.
+
+    Yields:
+        Documents containing the record text and traceability metadata.
+    """
     counter = _token_counter()
     max_tokens = _max_chunk_tokens()
     text = record.body or record.title
-    sections = _markdown_sections(text) if record.source_type == SourceType.DOCUMENTATION else [text]
+    sections = _markdown_sections(text) if record.source_type == SourceType.DOCUMENTATION else (text,)
 
-    chunks: list[Document] = []
     for section in sections:
-        for piece in _recursive_split(section, counter, max_tokens):
+        for piece in _iter_recursive_split(section, counter, max_tokens):
             content = piece.strip()
             if content:
-                chunks.append(
-                    Document(
-                        page_content=content,
-                        metadata=_record_metadata(record, project_id=None, source=None),
-                    )
+                yield Document(
+                    page_content=content,
+                    metadata=_record_metadata(record, project_id=None, source=None),
                 )
-    return chunks
 
 
 class IntelligenceIndexer:
@@ -154,12 +168,8 @@ class IntelligenceIndexer:
             source = _stable_source(project_id, record_id)
             deleted_chunks += self._delete_existing(source)
 
-            chunks = self._project_chunks(record, project_id, source)
             self._chunk_ids_by_source[source] = []
-            if not chunks:
-                continue
-
-            for chunk in chunks:
+            for chunk in self._iter_project_chunks(record, project_id, source):
                 pending.append(
                     (
                         chunk.page_content,
@@ -219,6 +229,23 @@ class IntelligenceIndexer:
             for chunk in chunks_for_record(record)
         ]
 
+    def _iter_project_chunks(
+        self,
+        record: IntelligenceRecord,
+        project_id: str,
+        source: str,
+    ) -> Iterator[Document]:
+        """Yield record chunks with project-scoped metadata."""
+        for chunk in iter_chunks_for_record(record):
+            yield Document(
+                page_content=chunk.page_content,
+                metadata=_record_metadata(
+                    record,
+                    project_id=project_id,
+                    source=source,
+                ),
+            )
+
     def _delete_existing(self, source: str) -> int:
         """Delete old chunks for one stable source URI."""
         remover = getattr(self.vector_store, "delete_chunks_by_source_path", None)
@@ -247,12 +274,18 @@ class IntelligenceIndexer:
 
 
 def _max_chunk_tokens() -> int:
-    """Return the configured or registered embedding input limit."""
+    """Return a safe token budget for one intelligence index chunk.
+
+    A model context window is not a safe embedding chunk size. Local ONNX
+    embedding memory grows with the longest input, so intelligence indexing
+    keeps the historical 384-token default while honoring a lower configured
+    limit or a model with a smaller context window.
+    """
     configured = getattr(settings, "EMBEDDINGS_MAX_INPUT_TOKENS", None)
     if configured and configured > 0:
-        return int(configured)
+        return min(int(configured), DEFAULT_MAX_CHUNK_TOKENS)
     registered = max_input_tokens_for(getattr(settings, "EMBEDDINGS_NAME", None))
-    return registered or DEFAULT_MAX_CHUNK_TOKENS
+    return min(registered or DEFAULT_MAX_CHUNK_TOKENS, DEFAULT_MAX_CHUNK_TOKENS)
 
 
 def _index_batch_size() -> int:
@@ -347,24 +380,61 @@ def _markdown_sections(text: str) -> list[str]:
 
 def _recursive_split(text: str, counter: Any, max_tokens: int, start: int = 0) -> list[str]:
     """Recursively split oversized text on progressively smaller boundaries."""
-    if not text or counter.count(text) <= max_tokens:
-        return [text] if text else []
+    return list(_iter_recursive_split(text, counter, max_tokens, start))
 
-    for offset, separator in enumerate(RECURSIVE_SEPARATORS, start=start):
+
+def _iter_recursive_split(
+    text: str,
+    counter: Any,
+    max_tokens: int,
+    start: int = 0,
+) -> Iterator[str]:
+    """Yield recursively split text without retaining all pieces."""
+    if not text:
+        return
+
+    max_chars_before_count = max(
+        MIN_TOKENIZER_INPUT_CHARS,
+        max(1, max_tokens) * APPROXIMATE_TOKEN_CHARS,
+    )
+    if len(text) <= max_chars_before_count and counter.count(text) <= max_tokens:
+        yield text
+        return
+
+    if len(text) > max_chars_before_count:
+        for offset in range(start, len(RECURSIVE_SEPARATORS)):
+            separator = RECURSIVE_SEPARATORS[offset]
+            if separator not in text:
+                continue
+            for part in _iter_parts_with_separator(text, separator):
+                yield from _iter_recursive_split(part, counter, max_tokens, offset + 1)
+            return
+
+        for offset in range(0, len(text), max_chars_before_count):
+            piece = text[offset : offset + max_chars_before_count]
+            yield from _iter_recursive_split(
+                piece,
+                counter,
+                max_tokens,
+                len(RECURSIVE_SEPARATORS),
+            )
+        return
+
+    for offset in range(start, len(RECURSIVE_SEPARATORS)):
+        separator = RECURSIVE_SEPARATORS[offset]
         if separator not in text:
             continue
-        parts = _parts_with_separator(text, separator)
-        packed = _pack_parts(parts, counter, max_tokens)
-        result: list[str] = []
-        for piece in packed:
+        has_parts = False
+        for piece in _iter_pack_parts(_iter_parts_with_separator(text, separator), counter, max_tokens):
+            has_parts = True
             if counter.count(piece) <= max_tokens:
-                result.append(piece)
+                yield piece
             else:
-                result.extend(_recursive_split(piece, counter, max_tokens, offset + 1))
-        if result and all(counter.count(piece) <= max_tokens for piece in result):
-            return result
+                yield from _iter_recursive_split(piece, counter, max_tokens, offset + 1)
+        if has_parts:
+            return
 
-    return counter.split(text, max_tokens)
+    yield from _iter_counter_split(text, counter, max_tokens)
 
 
 def _parts_with_separator(text: str, separator: str) -> list[str]:
@@ -377,20 +447,54 @@ def _parts_with_separator(text: str, separator: str) -> list[str]:
     ]
 
 
+def _iter_parts_with_separator(text: str, separator: str) -> Iterator[str]:
+    """Yield separator-preserving parts without copying the full split list."""
+    start = 0
+    separator_length = len(separator)
+    while True:
+        end = text.find(separator, start)
+        if end < 0:
+            part = text[start:]
+            if part:
+                yield part
+            return
+        part = text[start:end]
+        if part:
+            yield part + separator
+        start = end + separator_length
+
+
 def _pack_parts(parts: list[str], counter: Any, max_tokens: int) -> list[str]:
     """Pack separator-preserving parts without exceeding the token budget."""
-    packed: list[str] = []
+    return list(_iter_pack_parts(parts, counter, max_tokens))
+
+
+def _iter_pack_parts(
+    parts: Iterator[str],
+    counter: Any,
+    max_tokens: int,
+) -> Iterator[str]:
+    """Yield packed parts as soon as the next part exceeds the budget."""
     current = ""
     for part in parts:
         candidate = current + part
         if current and counter.count(candidate) > max_tokens:
-            packed.append(current)
+            yield current
             current = part
         else:
             current = candidate
     if current:
-        packed.append(current)
-    return packed
+        yield current
+
+
+def _iter_counter_split(text: str, counter: Any, max_tokens: int) -> Iterator[str]:
+    """Yield tokenizer fallback pieces, using bounded slicing when possible."""
+    if isinstance(counter, _ApproximateTokenCounter):
+        width = max(1, max_tokens) * APPROXIMATE_TOKEN_CHARS
+        for start in range(0, len(text), width):
+            yield text[start : start + width]
+        return
+    yield from counter.split(text, max_tokens)
 
 
 def _normalize_ids(returned_ids: Any) -> list[str]:
@@ -402,4 +506,9 @@ def _normalize_ids(returned_ids: Any) -> list[str]:
     return [str(chunk_id) for chunk_id in returned_ids]
 
 
-__all__ = ["IndexSummary", "IntelligenceIndexer", "chunks_for_record"]
+__all__ = [
+    "IndexSummary",
+    "IntelligenceIndexer",
+    "chunks_for_record",
+    "iter_chunks_for_record",
+]

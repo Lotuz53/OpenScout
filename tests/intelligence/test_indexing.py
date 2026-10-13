@@ -85,6 +85,28 @@ def test_long_issue_is_recursively_split(monkeypatch) -> None:
     ]
 
 
+def test_large_record_does_not_count_the_entire_body_at_once(monkeypatch) -> None:
+    class BoundedCounter:
+        max_seen = 0
+
+        def count(self, text: str) -> int:
+            self.max_seen = max(self.max_seen, len(text))
+            assert len(text) <= 2048
+            return len(text)
+
+        def split(self, text: str, max_tokens: int) -> list[str]:
+            return [text[index : index + max_tokens] for index in range(0, len(text), max_tokens)]
+
+    counter = BoundedCounter()
+    monkeypatch.setattr(indexing, "_token_counter", lambda: counter)
+    monkeypatch.setattr(indexing, "_max_chunk_tokens", lambda: 4)
+
+    chunks = indexing.chunks_for_record(issue_record(body="x" * 10000))
+
+    assert "".join(chunk.page_content for chunk in chunks) == "x" * 10000
+    assert counter.max_seen <= 2048
+
+
 def test_changed_record_replaces_only_its_chunks() -> None:
     repository = MagicMock()
     vector_store = MagicMock()
@@ -178,7 +200,7 @@ def test_replace_records_splits_one_record_across_batch_boundaries(monkeypatch) 
     vector_store.add_texts.side_effect = add_texts
     monkeypatch.setattr(
         indexing,
-        "chunks_for_record",
+        "iter_chunks_for_record",
         lambda record: [
             indexing.Document(
                 page_content=f"piece-{number}",
@@ -229,6 +251,42 @@ def test_replace_records_reports_stable_ids_when_a_batch_fails(monkeypatch) -> N
 
     with pytest.raises(RuntimeError, match=r"issue:0.*issue:1.*embedding unavailable"):
         IntelligenceIndexer(repository, vector_store).replace_records(PROJECT_ID, records)
+
+
+def test_replace_records_flushes_before_consuming_the_next_record_chunk(monkeypatch) -> None:
+    monkeypatch.setattr(
+        indexing,
+        "settings",
+        SimpleNamespace(
+            EMBEDDINGS_MAX_INPUT_TOKENS=None,
+            EMBEDDINGS_NAME="test_model",
+            INTELLIGENCE_INDEX_BATCH_SIZE=1,
+        ),
+    )
+    repository = MagicMock()
+    vector_store = MagicMock()
+    vector_store.delete_chunks_by_source_path.return_value = 0
+    calls = []
+    state = {"resumed": False}
+
+    def iter_chunks(record):
+        yield indexing.Document(page_content="first", metadata={})
+        state["resumed"] = True
+        yield indexing.Document(page_content="second", metadata={})
+
+    def add_texts(texts, metadatas):
+        calls.append((list(texts), state["resumed"]))
+        return [f"chunk-{len(calls)}"]
+
+    monkeypatch.setattr(indexing, "iter_chunks_for_record", iter_chunks, raising=False)
+    vector_store.add_texts.side_effect = add_texts
+
+    IntelligenceIndexer(repository, vector_store).replace_records(
+        PROJECT_ID,
+        [issue_record()],
+    )
+
+    assert calls == [(["first"], False), (["second"], True)]
 
 
 @pytest.fixture

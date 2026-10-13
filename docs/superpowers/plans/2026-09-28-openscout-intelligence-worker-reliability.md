@@ -248,7 +248,9 @@ Commit message: `perf(intelligence): bound vector indexing batches` (only if the
 
 **Files:**
 
-- Modify: this plan only, unless a directly evidenced operational defect requires a scoped code change.
+- Modify: this plan.
+- Modify: `docsgpt/intelligence/indexing.py` to stream large records through bounded chunks and avoid tokenizing an entire release at once; this was required by the reproduced worker memory-pressure failure.
+- Test: `tests/intelligence/test_indexing.py` for bounded record chunking and batch flushing.
 
 **Step 1 — Run focused regression validation.**
 
@@ -276,6 +278,8 @@ Commit message: `chore(intelligence): validate worker recovery rollout`
 
 Final report must include root cause evidence (including worker exit status if reproduced), modified files and purposes, tests/results, macOS startup impact, migration/deployment impact, unresolved native-crash risk, and a reminder to attach a PR screenshot or recording.
 
+Observed acceptance result: the canonical `langgenius/dify` project completed documentation, release, and issue indexing, then reached `partial` because GitHub issue-comment fetching encountered a retryable connection reset. The worker remained alive through the full release and issue stages, and no late-ack task remained in Redis.
+
 ---
 
 ## Completion Checklist
@@ -286,4 +290,4 @@ Final report must include root cause evidence (including worker exit status if r
 - [x] Task 4 complete and pushed.
 - [x] Task 5 complete and pushed.
 - [x] Task 6 complete and pushed.
-- [ ] Task 7 complete and pushed.
+- [x] Task 7 complete and pushed.
